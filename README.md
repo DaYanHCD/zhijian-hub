@@ -30,14 +30,9 @@
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/01-welcome.webp" width="220" alt="新聊天与快捷提问"><br><sub>新聊天与快捷提问</sub></td>
+    <td align="center"><img src="docs/screenshots/01-welcome.webp" width="220" alt="新对话"><br><sub>新对话</sub></td>
     <td align="center"><img src="docs/screenshots/02-latex.webp" width="220" alt="LaTeX 公式回答"><br><sub>LaTeX 公式回答</sub></td>
-    <td align="center"><img src="docs/screenshots/03-search.webp" width="220" alt="联网搜索设置"><br><sub>联网搜索设置</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/04-stats.webp" width="220" alt="用量统计"><br><sub>用量统计</sub></td>
-    <td align="center"><img src="docs/screenshots/05-memory.webp" width="220" alt="记忆设置"><br><sub>记忆设置</sub></td>
-    <td align="center"><img src="docs/screenshots/06-thinking.webp" width="220" alt="思考时间线与搜索结果"><br><sub>思考时间线与搜索结果</sub></td>
+    <td align="center"><img src="docs/screenshots/03-stats.webp" width="220" alt="统计"><br><sub>统计</sub></td>
   </tr>
 </table>
 
