@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: images
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、1.2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 22 11 L 20.704 9.704 C 20.253 9.25 19.64 8.994 19 8.994 C 18.36 8.994 17.747 9.25 17.296 9.704 L 11 16" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4 8 C 2.895 8 2 8.895 2 10 L 2 20 C 2 21.105 2.895 22 4 22 L 14 22 C 15.105 22 16 21.105 16 20" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 7 C 12 7.552 12.448 8 13 8 C 13.552 8 14 7.552 14 7 C 14 6.448 13.552 6 13 6 C 12.448 6 12 6.448 12 7 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 10 2 L 20 2 C 21.105 2 22 2.895 22 4 L 22 14 C 22 15.105 21.105 16 20 16 L 10 16 C 8.895 16 8 15.105 8 14 L 8 4 C 8 2.895 8.895 2 10 2 Z" />
+</vector>

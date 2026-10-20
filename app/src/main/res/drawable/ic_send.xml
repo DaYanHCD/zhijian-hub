@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: send-horizontal
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 3.714 3.048 C 3.53 2.958 3.31 2.99 3.159 3.129 C 3.008 3.267 2.957 3.484 3.031 3.675 L 5.874 11.302 C 6.042 11.752 6.042 12.248 5.874 12.698 L 3.032 20.325 C 2.959 20.516 3.009 20.732 3.16 20.87 C 3.31 21.009 3.53 21.041 3.714 20.952 L 21.714 12.452 C 21.889 12.369 22 12.193 22 12 C 22 11.807 21.889 11.631 21.714 11.548 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 6 12 L 22 12" />
+</vector>

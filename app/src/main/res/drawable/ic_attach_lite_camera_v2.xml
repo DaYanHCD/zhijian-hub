@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: camera
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、1.2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 13.997 4 C 14.732 4 15.408 4.403 15.757 5.05 L 16.243 5.95 C 16.592 6.597 17.268 7 18.003 7 L 20 7 C 21.105 7 22 7.895 22 9 L 22 18 C 22 19.105 21.105 20 20 20 L 4 20 C 2.895 20 2 19.105 2 18 L 2 9 C 2 7.895 2.895 7 4 7 L 5.997 7 C 6.731 7 7.406 6.598 7.756 5.952 L 8.245 5.048 C 8.595 4.402 9.27 4 10.004 4 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 9 13 C 9 14.657 10.343 16 12 16 C 13.657 16 15 14.657 15 13 C 15 11.343 13.657 10 12 10 C 10.343 10 9 11.343 9 13 Z" />
+</vector>

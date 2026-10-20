@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 单色品牌风：只有"底"和"符号"两个颜色，没有第三色 -->
+    <!-- 窗口底色（App 启动第一帧、最近任务缩略图都用它）：2026-10-15 用户改成白色 -->
+    <color name="hub_window_background">#FFFFFFFF</color>
+    <color name="ic_hub_background">#FFFFFFFF</color>
+    <!-- 深色模式专用图标：黑底、白标 -->
+    <color name="ic_hub_background_dark">#FF0A0A0C</color>
+</resources>

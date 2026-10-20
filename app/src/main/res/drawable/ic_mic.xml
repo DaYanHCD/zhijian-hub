@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: mic
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 19 L 12 22" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 19 10 L 19 12 C 19 15.866 15.866 19 12 19 C 8.134 19 5 15.866 5 12 L 5 10" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 2 L 12 2 C 13.657 2 15 3.343 15 5 L 15 12 C 15 13.657 13.657 15 12 15 L 12 15 C 10.343 15 9 13.657 9 12 L 9 5 C 9 3.343 10.343 2 12 2 Z" />
+</vector>

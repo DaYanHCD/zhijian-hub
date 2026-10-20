@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: copy
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 10 8 L 20 8 C 21.105 8 22 8.895 22 10 L 22 20 C 22 21.105 21.105 22 20 22 L 10 22 C 8.895 22 8 21.105 8 20 L 8 10 C 8 8.895 8.895 8 10 8 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4 16 C 2.9 16 2 15.1 2 14 L 2 4 C 2 2.9 2.9 2 4 2 L 14 2 C 15.1 2 16 2.9 16 4" />
+</vector>

@@ -1,0 +1,146 @@
+<resources>
+    <!-- 正式版的名字（现在不发）。测试版是「指尖Hub-Beta」，
+         在 src/debug/res 与 src/beta/res 里覆盖 —— 见 app/build.gradle.kts 的 buildTypes。 -->
+    <string name="app_name">指尖Hub</string>
+
+    <!-- 对话页 -->
+    <string name="chat_empty">和 AI 说点什么吧</string>
+    <string name="chat_hint">发送消息…</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_action_fullscreen">全屏输入</string>
+    <string name="chat_save">保存</string>
+    <string name="chat_input_fullscreen_hint">输入消息与AI聊天</string>
+    <string name="chat_stop">停止生成</string>
+    <string name="more_delete_message">删除这条消息</string>
+    <string name="chat_stopped">（已停止）</string>
+    <string name="chat_empty_reply">（空回复）</string>
+    <string name="chat_action_more">更多</string>
+    <string name="chat_action_voice">语音（暂未上线）</string>
+    <string name="chat_action_emoji">表情</string>
+    <string name="chat_need_provider">还没配好供应商：点左上角进侧栏，「提供商」里加一个（要填接口地址、Key 和模型名）。</string>
+    <string name="chat_already_new">已经是一个新对话了</string>
+    <string name="chat_busy_hint">正在生成回答，等它说完再发这条</string>
+
+    <!-- 顶栏 / 抽屉 -->
+    <string name="chat_action_drawer">打开侧栏</string>
+    <string name="chat_action_new_chat">新对话</string>
+    <string name="chat_title_new">新聊天</string>
+    <string name="chat_action_search">搜索</string>
+    <string name="about_message">纯安卓原生的 AI 对话客户端：自带 API Key、不依赖自有服务器、不注册账号。</string>
+    <!-- 时间分隔 -->
+    <string name="chat_time_morning">上午</string>
+    <string name="chat_time_afternoon">下午</string>
+    <string name="chat_time_yesterday">昨天</string>
+    <string name="chat_time_month_day">%1$d月%2$d日</string>
+    <string name="chat_time_year_month_day">%1$d年%2$d月%3$d日</string>
+
+    <!-- 头像 -->
+    <string name="avatar_me">我</string>
+    <string name="avatar_assistant">AI</string>
+
+    <!-- 设置 -->
+    <string name="settings_model_unset">未设置模型</string>
+    <string name="action_cancel">取消</string>
+
+    <!-- 抽屉入口 -->
+
+    <!-- 「更多」菜单 -->
+
+    <!-- 提供商 -->    <string name="provider_add">添加提供商</string>
+    <string name="provider_edit">编辑</string>
+    <string name="provider_current">当前在用</string>
+    <string name="provider_delete">删除</string>
+    <string name="provider_delete_confirm">确定删除这个供应商？它的 Key 和模型列表会一起没掉。</string>
+    <string name="provider_name">名称</string>
+    <string name="provider_base_url">接口地址</string>
+    <string name="provider_api_key">API Key</string>
+    <string name="provider_models">模型</string>
+    <!-- 当前对话的供应商与模型 -->
+    <!-- 提供商（整页） -->
+    <string name="providers_title">提供商</string>    <string name="provider_badge_enabled">启用</string>
+    <string name="provider_badge_disabled">禁用</string>
+    <string name="provider_models_count">%1$d 个模型</string>    <string name="provider_api_path">API 路径</string>
+    <string name="provider_api_path_hint">/chat/completions</string>
+    <string name="provider_model_empty">还没有模型 —— 点上面的「自动检测模型」把清单拉回来</string>    <string name="provider_saved">已保存</string>
+    <!-- 关于 / 更新日志 -->
+    <string name="about_size">安装包大小</string>
+    <string name="changelog_title">更新日志</string>
+    <string name="changelog_current">当前版</string>
+    <string name="changelog_empty">这一版没有写更新内容。</string>
+    <string name="changelog_version_label">版本 %1$s</string>
+    <string name="changelog_local_only">未能连接服务器，以下为本地记录。</string>
+    <!-- 关于 / 检查更新 -->
+    <string name="about_title">关于</string>
+    <string name="action_retry">重试</string>
+    <string name="action_close">关闭</string>
+    <string name="action_install">立即安装</string>
+    <string name="action_later">以后再说</string>
+    <string name="action_update_now">立即更新</string>
+    <string name="action_go_settings">去设置</string>
+    <string name="dialog_checking">正在检查更新…</string>
+    <string name="dialog_up_to_date_title">已是最新版本</string>
+    <string name="dialog_up_to_date_message">当前版本 %1$s，服务器上没有更新的版本。</string>
+    <string name="dialog_new_version_title">发现新版本 %1$s</string>
+    <string name="dialog_new_version_size">安装包大小：%1$s</string>
+    <string name="dialog_new_version_released">发布时间：%1$s</string>
+    <string name="dialog_changelog">更新内容</string>
+    <string name="dialog_downloading_title">正在下载更新</string>
+    <string name="dialog_download_progress">%1$s / %2$s</string>
+    <string name="dialog_download_done_title">下载完成</string>
+    <string name="dialog_check_failed_title">检查更新失败</string>
+    <string name="dialog_download_failed_title">下载失败</string>
+    <string name="dialog_install_permission_title">需要「安装未知应用」权限</string>
+    <string name="dialog_install_permission_message">系统会打开本应用的权限页，请把「允许安装未知应用」打开，然后回到这里点「立即安装」。</string>
+    <string name="error_network">网络不通或服务器连不上，请检查网络后重试。</string>
+    <string name="error_server">服务器返回错误（HTTP %1$d）。</string>
+    <string name="error_parse">更新清单解析失败，请稍后再试。</string>
+    <string name="error_download">下载安装包失败，请稍后重试。</string>
+    <string name="error_verify">安装包校验没通过（可能下载不完整），请重新下载。</string>
+    <string name="dialog_install_failed_title">安装失败</string>
+    <string name="error_install">安装包已经下载好了，但系统没让拉起安装界面。请重试一次；还不行就手动到应用详情里确认「安装未知应用」是允许的。</string>
+    <string name="unknown_size">未知大小</string>
+    <!-- 提供商（2026-10-13 用户精简之后的） -->
+    <string name="action_back">返回</string>
+    <string name="provider_untitled">未命名</string>
+    <string name="provider_save">保存</string>
+    <string name="provider_enable_need_key">还没填 API Key，点这张卡片进去填</string>
+    <string name="provider_detect_models">自动检测模型</string>
+    <string name="provider_detect_busy">正在检测可用模型…</string>
+    <string name="provider_detect_ok">检测到 %1$d 个模型，已保存</string>
+    <string name="provider_detect_empty">这家没报出模型（可能不支持 /models 接口），手动加吧</string>
+    <string name="provider_detect_failed">检测失败：接口地址和 Key 填好再试</string>
+    <string name="provider_detect_need_url">先填接口地址</string>
+    <!-- 输入胶囊「＋」的添加栏（照微信那个） -->
+    <!-- 正文：一次完整对话里那两块（输入区 / 输出区） -->
+    <string name="message_action_copy">复制</string>
+    <string name="message_action_regenerate">重新生成</string>
+    <string name="message_action_resend">重新发送</string>
+    <string name="message_action_edit">编辑</string>
+    <string name="message_action_more">更多</string>
+    <string name="message_copied">已复制到剪贴板</string>
+    <string name="message_thought_expand">展开思考过程</string>
+    <string name="chat_action_add">添加</string>
+    <!-- 表情栏的分类标签（图标是 Lucide 的 ic_tab_*，见 EmojiPanel.kt） -->
+    <!-- 语音输入（只做 UI） -->
+    <string name="chat_voice_hold">长按说话</string>
+    <string name="chat_voice_to_text">转文字</string>
+    <string name="chat_voice_send">发送</string>
+    <string name="chat_voice_cancel">取消</string>
+    <string name="chat_action_keyboard">键盘</string>
+    <string name="emoji_panel_back">返回</string>
+    <string name="emoji_category_smile">表情</string>
+    <string name="emoji_category_hand">手势</string>
+    <string name="emoji_category_animal">动物</string>
+    <string name="emoji_category_food">食物</string>
+    <string name="emoji_category_activity">活动</string>
+    <string name="emoji_category_symbol">符号</string>
+    <string name="attach_gallery">添加图片</string>
+    <string name="attach_camera">相机拍摄</string>
+    <string name="attach_switch_model">切换模型</string>
+    <string name="attach_thinking_depth">思考深度</string>
+    <string name="attach_search_settings">搜索设置</string>
+    <string name="attach_plugins">插件选择</string>
+    <string name="attach_permission_privacy">权限隐私</string>
+    <string name="attach_send_file">添加文件</string>
+    <string name="attach_send_location">发送位置</string>
+</resources>
