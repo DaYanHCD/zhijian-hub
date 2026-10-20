@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 厂商 Logo，来自 LobeHub icons（MIT）。官方就是单色的，显示时用主题色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M 6.469 8.776 L 16.512 23 L 12.048 23 L 2.005 8.776 L 6.47 8.776 Z M 6.465 16.676 L 8.698 19.84 L 6.467 23 L 2 23 L 6.465 16.676 Z M 22 2.582 L 22 23 L 18.341 23 L 18.341 7.764 L 22 2.582 Z M 22 1 L 12.048 15.095 L 9.815 11.932 L 17.533 1 L 22 1 Z" />
+</vector>

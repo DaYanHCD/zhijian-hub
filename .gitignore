@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# 本机路径与签名（绝不入库）
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 构建产物
+*.apk
+*.aab
+*.ap_
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+captures/
+.externalNativeBuild/
+.cxx/

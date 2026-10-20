@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标: 提供商（侧栏「提供商」那一行的图标）
+    造型: 上下两台"服务器"（圆角方框 + 左边一个小灯），一眼是"服务/供应商"。
+    写法与 ic_sidebar.xml 一致：描边，坐标在 24×24 网格（y 向下）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.7"
+        android:strokeLineJoin="round"
+        android:pathData="M5,4.6h14c1.2,0 2.2,1 2.2,2.2v2.4c0,1.2 -1,2.2 -2.2,2.2H5c-1.2,0 -2.2,-1 -2.2,-2.2V6.8c0,-1.2 1,-2.2 2.2,-2.2z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.7"
+        android:strokeLineJoin="round"
+        android:pathData="M5,12.6h14c1.2,0 2.2,1 2.2,2.2v2.4c0,1.2 -1,2.2 -2.2,2.2H5c-1.2,0 -2.2,-1 -2.2,-2.2v-2.4c0,-1.2 1,-2.2 2.2,-2.2z" />
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M6.8,6.4a1.2,1.2 0 1,1 0,2.4a1.2,1.2 0 1,1 0,-2.4z M6.8,14.4a1.2,1.2 0 1,1 0,2.4a1.2,1.2 0 1,1 0,-2.4z" />
+</vector>

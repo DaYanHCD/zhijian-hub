@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Google Material Symbols (Outlined)
+    名称: arrow_back
+    许可: Apache License 2.0
+    由 material-symbols-to-vectordrawable.ps1 自动生成，请勿手工修改。
+    若要新增或更换图标，请修改生成脚本的图标清单后重新生成。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group android:translateY="960">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="m313-440 224 224-57 56-320-320 320-320 57 56-224 224h487v80H313Z" />
+    </group>
+</vector>

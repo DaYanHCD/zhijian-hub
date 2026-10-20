@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Lucide（https://lucide.dev），lucide-static 官方 SVG
+    名称: heart
+    许可: ISC
+    由 开发脚本\资源\生成Lucide图标.js 自动生成，请勿手工修改。
+    若要新增或更换图标，请改生成脚本顶部的 MAP 后重新生成。
+    规格: 24×24 网格、2 线宽、圆头圆角；描边色留黑，显示时由 MaterialSymbol 的 tint 上色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 2 9.5 C 2 7.222 3.404 5.18 5.532 4.364 C 7.659 3.549 10.068 4.13 11.591 5.824 C 11.697 5.937 11.845 6.001 12 6.001 C 12.155 6.001 12.303 5.937 12.409 5.824 C 13.927 4.118 16.343 3.53 18.475 4.347 C 20.607 5.165 22.011 7.217 22 9.5 C 22 11.79 20.5 13.5 19 15 L 13.508 20.313 C 13.131 20.746 12.586 20.996 12.012 21 C 11.438 21.003 10.89 20.76 10.508 20.332 L 5 15 C 3.5 13.5 2 11.8 2 9.5" />
+</vector>

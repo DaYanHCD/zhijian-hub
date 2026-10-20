@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文 HTTP 放行。
+
+  为什么需要：本 App 的核心用法之一是「自定义」供应商指向局域网里的自建服务
+  （Ollama / LM Studio / one-api 等，地址通常是 http://192.168.x.x:11434/v1）。
+  Android 9 起默认禁止明文 HTTP，不放行的话这类地址一律失败，
+  而且报出来的是 `Cleartext HTTP traffic not permitted` 这种用户看不懂的错。
+
+  ⚠️ XML 这一层只能按域名/子域配置，不支持 CIDR 网段，所以这里仍保留能力；
+  真正限制在 `NetworkGuard`：公网 http:// 会被拒绝，只允许 localhost、私有网段、
+  `.local` 和单段局域网主机名。HTTPS 仍照常走系统证书校验。
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config
+        cleartextTrafficPermitted="true"
+        tools:ignore="InsecureBaseConfiguration">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

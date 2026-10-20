@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Beta 通道的桌面名字（debug 与 beta 两个构建都用它）。
+
+  现在整条产品线只有测试版，正式版（main 里的「指尖Hub」）等功能完善了再发 ——
+  见 app/build.gradle.kts 的 buildTypes 注释。2026-10-16 用户要求改名。
+-->
+<resources>
+    <string name="app_name">指尖Hub-Beta</string>
+</resources>

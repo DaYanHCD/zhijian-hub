@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标来源: Google Material Symbols (Outlined (wght200))
+    名称: attach_lite_search
+    许可: Apache License 2.0
+    由 material-symbols-to-vectordrawable.ps1 自动生成，请勿手工修改。
+    若要新增或更换图标，请修改生成脚本的图标清单后重新生成。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group android:translateY="960">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M120-241.54v-40h382.31v40H120Zm0-191.54v-40h178.46v40H120Zm0-191.54v-40h178.46v40H120ZM811.69-240 656.15-393.23q-21.69 16.23-47.11 25.11-25.42 8.89-52.12 8.89-67.35 0-114.83-46.58-47.47-46.57-47.47-113.81 0-67.23 47.52-113.8Q489.67-680 557.11-680q67.43 0 114.77 46.58 47.35 46.57 47.35 113.42 0 26.69-8.88 52.12-8.89 25.42-25.89 46.34L840-268.31 811.69-240ZM556.92-399.23q50.96 0 86.64-35 35.67-35 35.67-85.39 0-50.38-35.67-85.38-35.68-35-86.64-35t-86.63 35q-35.67 35-35.67 85.38 0 50.39 35.67 85.39t86.63 35Z" />
+    </group>
+</vector>

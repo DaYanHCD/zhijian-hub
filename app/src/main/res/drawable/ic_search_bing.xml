@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    搜索厂商 Logo，来自 LobeHub icons（MIT）。官方彩色版。
+    原 SVG 为 radialGradient，这里用同色系线性渐变近似。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:pathData="M 11.97 7.569 a .92 .92 0 0 0 -.805 .863 c -.013 .195 -.01 .209 .43 1.347 c 1 2.59 1.242 3.214 1.283 3.302 c .099 .213 .237 .413 .41 .592 c .134 .138 .222 .212 .37 .311 c .26 .176 .39 .224 1.405 .527 c .989 .295 1.529 .49 1.994 .723 c .603 .302 1.024 .644 1.29 1.051 c .191 .292 .36 .815 .434 1.342 c .029 .206 .029 .661 0 .847 a 2.491 2.491 0 0 1 -.376 1.026 c -.1 .151 -.065 .126 .081 -.058 c .415 -.52 .838 -1.408 1.054 -2.213 a 6.728 6.728 0 0 0 .102 -3.012 a 6.626 6.626 0 0 0 -3.291 -4.53 a 104.157 104.157 0 0 0 -1.322 -.698 l -.254 -.133 a 737.941 737.941 0 0 1 -1.575 -.827 c -.548 -.29 -.78 -.406 -.846 -.426 a 1.376 1.376 0 0 0 -.29 -.045 l -.093 .01 z ">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="12" android:startY="8"
+                android:endX="20" android:endY="18">
+                <item android:offset="0" android:color="#FF00CACC" />
+                <item android:offset="1" android:color="#FF048FCE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M 13.164 17.24 a 4.385 4.385 0 0 0 -.202 .125 a 511.45 511.45 0 0 0 -1.795 1.115 a 163.087 163.087 0 0 1 -.989 .614 l -.463 .288 a 99.198 99.198 0 0 1 -1.502 .941 c -.326 .2 -.704 .334 -1.09 .387 c -.18 .024 -.52 .024 -.7 0 a 2.807 2.807 0 0 1 -1.318 -.538 a 3.665 3.665 0 0 1 -.543 -.545 a 2.837 2.837 0 0 1 -.506 -1.141 a 2.161 2.161 0 0 0 -.041 -.182 c -.008 -.008 .006 .138 .032 .33 c .027 .199 .085 .487 .147 .733 c .482 1.907 1.85 3.457 3.705 4.195 a 6.31 6.31 0 0 0 1.658 .412 c .22 .025 .844 .035 1.074 .017 c 1.054 -.08 1.972 -.393 2.913 -.992 a 325.28 325.28 0 0 1 .937 -.596 l .384 -.244 l .684 -.435 l .234 -.149 l .009 -.005 l .025 -.017 l .013 -.007 l .172 -.11 l .597 -.38 c .76 -.481 .987 -.65 1.34 -.998 c .148 -.146 .37 -.394 .381 -.425 c .002 -.007 .042 -.068 .088 -.136 a 2.49 2.49 0 0 0 .373 -1.023 a 4.181 4.181 0 0 0 0 -.847 a 4.336 4.336 0 0 0 -.318 -1.137 c -.224 -.472 -.7 -.9 -1.383 -1.245 a 2.972 2.972 0 0 0 -.406 -.181 c -.01 0 -.646 .392 -1.413 .87 a 7089.171 7089.171 0 0 0 -1.658 1.031 l -.439 .274 z ">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="6" android:startY="16"
+                android:endX="18" android:endY="24">
+                <item android:offset="0" android:color="#FF00BBEC" />
+                <item android:offset="1" android:color="#FF2756A9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M 4.003 14.946 l .004 3.33 l .042 .193 c .134 .604 .366 1.04 .77 1.445 a 2.701 2.701 0 0 0 1.955 .814 c .536 0 1 -.135 1.479 -.43 l .703 -.435 l .556 -.346 V 8.003 c 0 -2.306 -.004 -3.675 -.012 -3.782 a 2.734 2.734 0 0 0 -.797 -1.765 c -.145 -.144 -.268 -.24 -.637 -.496 A 1780.102 1780.102 0 0 1 5.762 .362 C 5.406 .115 5.38 .098 5.271 .059 a .943 .943 0 0 0 -1.254 .696 C 4.003 .818 4 1.659 4 6.223 v 5.394 H 4 l .003 3.329 z ">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="4" android:startY="0"
+                android:endX="8" android:endY="20">
+                <item android:offset="0" android:color="#FF00BBEC" />
+                <item android:offset="1" android:color="#FF2756A9" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

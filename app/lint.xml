@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+        以下图标由官方品牌 SVG / Google Material Symbols 原样转换。
+        路径较长是为了保持图形准确，压缩会改变品牌 Logo 的视觉结果；
+        因此只对这批固定资源关闭 VectorPath 性能提示，其它 Vector 仍会正常检查。
+    -->
+    <issue id="VectorPath">
+        <ignore path="src/main/res/drawable/ic_attach_lite_phone.xml" />
+        <ignore path="src/main/res/drawable/ic_attach_lite_puzzle.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_aihubmix.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_baidu.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_cerebras.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_deepseek.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_gemini.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_huggingface.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_minimax.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_moonshot.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_nvidia.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_ollama.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_openai.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_qwen.xml" />
+        <ignore path="src/main/res/drawable/ic_brand_zhipu.xml" />
+        <ignore path="src/main/res/drawable/ic_search_bing.xml" />
+        <ignore path="src/main/res/drawable/ic_search_firecrawl.xml" />
+    </issue>
+
+    <!--
+        Launcher 图标只保留用户图里的 H，外圈圆角方框已裁掉；
+        Android 8+ 用自适应图标，低版本用圆形底 PNG 兜底，
+        round 资源与普通资源共用同一张图形属于有意为之。
+    -->
+    <issue id="IconLauncherShape">
+        <ignore path="src/main/res/mipmap-xxxhdpi/ic_launcher.png" />
+        <ignore path="src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" />
+        <ignore path="src/main/res/mipmap-night-xxxhdpi/ic_launcher.png" />
+        <ignore path="src/main/res/mipmap-night-xxxhdpi/ic_launcher_round.png" />
+    </issue>
+    <issue id="IconDuplicates">
+        <ignore path="src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" />
+        <ignore path="src/main/res/mipmap-night-xxxhdpi/ic_launcher_round.png" />
+    </issue>
+    <!-- 深色模式由 mipmap-night 资源切换；没有添加 monochrome 层。 -->
+    <issue id="MonochromeLauncherIcon" severity="ignore" />
+</lint>

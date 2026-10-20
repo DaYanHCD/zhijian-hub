@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 厂商 Logo，来自 LobeHub icons（MIT）。官方彩色版。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFEF2CC1"
+        android:fillType="evenOdd"
+        android:pathData="M 23.197 4.503 C 22.401 3.125 21.091 2.119 19.553 1.707 C 18.016 1.295 16.378 1.511 15 2.307 C 13.221 3.328 12.09 5.19 12.005 7.24 L 18.001 7.248 L 18.001 7.763 L 12.005 7.763 C 12.044 8.7 12.303 9.633 12.805 10.503 C 13.856 12.401 15.849 13.585 18.019 13.598 C 20.188 13.611 22.196 12.451 23.269 10.566 C 24.343 8.68 24.314 6.362 23.195 4.503 Z" />
+    <path
+        android:fillColor="#FFCAAEF5"
+        android:fillType="evenOdd"
+        android:pathData="M 0.805 4.5 C 0.009 5.878 -0.207 7.516 0.205 9.053 C 0.616 10.59 1.622 11.901 3 12.697 C 4.774 13.728 6.953 13.776 8.77 12.824 L 5.779 7.627 L 6.225 7.37 L 9.222 12.562 C 11.323 11.224 12.379 8.728 11.876 6.289 C 11.373 3.85 9.415 1.975 6.957 1.577 C 4.498 1.18 2.05 2.343 0.804 4.5 Z" />
+    <path
+        android:fillColor="#FFFC4C02"
+        android:fillType="evenOdd"
+        android:pathData="M 12 23.894 C 15.313 23.893 17.999 21.207 17.999 17.894 C 17.999 15.764 16.899 13.898 15.224 12.834 L 12.219 18.023 L 11.775 17.765 L 14.772 12.573 C 12.563 11.422 9.873 11.755 8.012 13.411 C 6.151 15.066 5.506 17.7 6.392 20.028 C 7.277 22.356 9.509 23.894 12 23.894 Z" />
+</vector>
