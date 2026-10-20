@@ -5,6 +5,8 @@
 当前开源版本：**1.0.0**，桌面名「指尖Hub-OS」，包名
 `com.fingertipfuture.hub.os`。安装包从 GitHub Releases 下载。
 
+官网：[fingertipfuture.top](https://fingertipfuture.top/)
+
 - 纯原生实现：Compose + `HttpURLConnection` + `org.json`
 - 供应商预设 + 自定义兼容地址
 - 会话存本地 SQLite，支持导出 / 导入 / WebDAV 备份
