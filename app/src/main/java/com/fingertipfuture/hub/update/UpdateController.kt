@@ -51,7 +51,9 @@ object UpdateController {
     fun initialize(context: Context) {
         val app = context.applicationContext
         appContext = app
-        repository = UpdateRepository(AppConfig.manifestUrl(debugBaseUrlOverride(app)))
+        if (!AppConfig.OPEN_SOURCE_BUILD) {
+            repository = UpdateRepository(AppConfig.manifestUrl(debugBaseUrlOverride(app)))
+        }
         if (!startupCleanupDone) {
             startupCleanupDone = true
             // 升级成功后会以新版本重启，此时旧安装包已完成使命
@@ -60,12 +62,19 @@ object UpdateController {
     }
 
     /** 用户主动点击「检查更新」：无论结果如何都给反馈。 */
-    fun checkForUpdate() = startCheck(quiet = false)
+    fun checkForUpdate() {
+        if (AppConfig.OPEN_SOURCE_BUILD) {
+            state = UpdateState.UpToDate(AppConfig.CURRENT_VERSION_NAME)
+            return
+        }
+        startCheck(quiet = false)
+    }
 
     /** 应用启动时静默检查：只有真的发现新版本才弹窗，失败不打扰用户。 */
     fun checkForUpdateOnStartup() {
         if (startupCheckDone) return
         startupCheckDone = true
+        if (AppConfig.OPEN_SOURCE_BUILD) return
         startCheck(quiet = true)
     }
 
@@ -144,6 +153,12 @@ object UpdateController {
 
     /** 打开「更新日志」：去服务器读清单，把 latest + history 列出来。 */
     fun showChangelog() {
+        if (AppConfig.OPEN_SOURCE_BUILD) {
+            changelog = ChangelogState.Loaded(
+                UpdateManifest(latest = LocalChangelog.entries().first()),
+            )
+            return
+        }
         val repo = repository ?: return
         changelogTask?.cancel()
         changelog = ChangelogState.Loading

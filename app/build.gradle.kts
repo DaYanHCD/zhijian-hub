@@ -28,14 +28,16 @@ android {
         applicationId = "com.fingertipfuture.hub"
         minSdk = 24
         targetSdk = 36
-        // 2026-10-19：1.0.23 发布（Beta 渠道）：附件/排序/流式保存/密钥/备份恢复修复，
-        // 并新增“隐藏思考”。发布记录见《发布版本\发布记录\2026-10-19-1.0.23.txt》。
-        versionCode = 31
-        versionName = "1.0.23"
+        // 2026-10-20：GitHub 开源版 1.0.0。
+        // Beta 渠道由发布脚本在构建时临时覆盖版本号，不受这里的开源版本号影响。
+        versionCode = 1
+        versionName = "1.0.0"
 
         // 更新服务地址（必须以 / 结尾）。清单在 <根>/update/version.json。
         buildConfigField("String", "UPDATE_BASE_URL", "\"https://fingertipfuture.com/hub/\"")
         buildConfigField("boolean", "TEST_BUILD", "false")
+        // 开源版不读取闭源渠道的更新清单；由下面的 open 构建覆盖为 true。
+        buildConfigField("boolean", "OPEN_SOURCE_BUILD", "false")
     }
 
     signingConfigs {
@@ -81,6 +83,19 @@ android {
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+
+        /**
+         * GitHub 开源版：桌面名「指尖Hub-OS」，包名 `com.fingertipfuture.hub.os`。
+         * 版本从 1.0.0 重新起算，并且不访问闭源 Beta / 正式版的更新清单。
+         *
+         * 独立的 `.os` 包名让它能和 Beta / 将来的正式版同时安装，也不会被错误提示
+         * 「升级」到一个版本号更大的测试包。
+         */
+        create("open") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".os"
+            buildConfigField("boolean", "OPEN_SOURCE_BUILD", "true")
         }
 
         /**
