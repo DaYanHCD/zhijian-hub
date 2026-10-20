@@ -105,9 +105,10 @@ internal fun AboutScreen(
             )
             SettingsItem(
                 title = "GitHub 仓库",
-                subtitle = "暂未公开，后续会放出源码",
+                subtitle = "DaYanHCD/zhijian-hub",
                 icon = R.drawable.ic_edit,
                 chevron = true,
+                onClick = { openUrl(context, "https://github.com/DaYanHCD/zhijian-hub") },
             )
         }
     }

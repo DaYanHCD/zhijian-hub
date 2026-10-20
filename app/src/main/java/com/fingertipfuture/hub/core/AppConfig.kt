@@ -19,6 +19,9 @@ object AppConfig {
     /** 是否 debug 构建。 */
     val IS_DEBUG: Boolean = BuildConfig.DEBUG
 
+    /** GitHub 开源版：只展示内置更新日志，不连接闭源渠道的更新清单。 */
+    val OPEN_SOURCE_BUILD: Boolean = BuildConfig.OPEN_SOURCE_BUILD
+
     /**
      * 调试用的更新地址覆盖（**只在 debug 包里生效**）。
      *
