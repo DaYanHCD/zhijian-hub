@@ -36,12 +36,8 @@
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/01-welcome.webp" width="220" alt="新对话"><br><sub>新对话</sub></td>
-    <td align="center"><img src="docs/screenshots/02-automation.png" width="220" alt="自动化任务"><br><sub>自动化任务</sub></td>
-    <td align="center"><img src="docs/screenshots/03-storage.png" width="220" alt="存储与扩展"><br><sub>存储与扩展</sub></td>
-    <td align="center"><img src="docs/screenshots/04-extensions.png" width="220" alt="动态表情扩展"><br><sub>动态表情扩展</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="4"><img src="docs/screenshots/05-update.png" width="220" alt="1.0.1 更新日志"><br><sub>独立更新日志</sub></td>
+    <td align="center"><img src="docs/screenshots/02-latex.webp" width="220" alt="LaTeX 公式回答"><br><sub>LaTeX 公式回答</sub></td>
+    <td align="center"><img src="docs/screenshots/03-stats.webp" width="220" alt="统计"><br><sub>统计</sub></td>
   </tr>
 </table>
 
