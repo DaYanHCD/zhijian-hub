@@ -2,7 +2,7 @@ package com.fingertipfuture.hub.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
+import com.fingertipfuture.hub.ui.component.HubAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.material3.TextButton
@@ -35,7 +35,6 @@ internal fun AboutDialog(onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
         title = { Text(stringResource(R.string.about_title)) },
         text = {
             Column {

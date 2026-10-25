@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -19,7 +20,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -37,8 +38,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import android.widget.Toast
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.UiPrefs
 
 /**
@@ -426,6 +427,26 @@ internal object MathText {
                 return parseSequence(stopAtBrace = true)
             }
             if (text[index] == '\\') return parseCommand()
+            if (text[index] == '(') {
+                index++
+                val start = index
+                var depth = 1
+                while (index < text.length) {
+                    when (text[index]) {
+                        '(' -> depth++
+                        ')' -> {
+                            depth--
+                            if (depth == 0) {
+                                val value = text.substring(start, index)
+                                index++
+                                return value
+                            }
+                        }
+                    }
+                    index++
+                }
+                return text.substring(start)
+            }
             val start = index
             if (text[index].isDigit()) {
                 while (index < text.length && text[index].isDigit()) index++
@@ -524,12 +545,13 @@ internal object MathText {
 
     private fun script(value: String, superscript: Boolean): String {
         val map = if (superscript) superscripts else subscripts
-        val converted = value.map { map[it] ?: return@map null }
-        return if (converted.all { it != null }) {
-            converted.joinToString("")
-        } else {
-            (if (superscript) "^(" else "_(") + value + ")"
-        }
+        val converted = value.map { map[it] }
+        if (converted.all { it != null }) return converted.joinToString("")
+
+        // Unicode 没有完整的 A-Z 上下标；保留可读字母，只把定界符换成上下标括号，
+        // 例如 p_(Hg) 显示为 p₍Hg₎，而不是把原始 `_( )` 暴露给用户。
+        val mixed = value.map { map[it] ?: it }.joinToString("")
+        return if (superscript) "⁽$mixed⁾" else "₍$mixed₎"
     }
 
     private fun blackboard(value: String): String = buildString {
@@ -729,57 +751,69 @@ internal fun MathFormulaBlock(source: String) {
         },
         modifier = Modifier.fillMaxWidth(),
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val contentMinWidth = maxWidth
-            Box(
+        Column {
+            // 复制键独占一行，不再覆盖横向滚动的公式正文。
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                    .padding(start = 14.dp, end = 8.dp, top = 7.dp),
+                horizontalArrangement = Arrangement.End,
             ) {
-                SelectionContainer {
-                    if (structured) {
-                        Column(
-                            modifier = Modifier
-                                .widthIn(min = contentMinWidth)
-                                .padding(horizontal = 14.dp, vertical = 11.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            lines
-                                .filterNot { it is MathLine.Plain && it.text.isBlank() }
-                                .forEach { line -> MathLineView(line, HubInk) }
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            clipboard.setText(AnnotatedString(formatted))
+                            context.showLocalizedToast("已复制公式")
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MaterialSymbol(
+                        resId = R.drawable.ic_copy,
+                        contentDescription = "复制公式",
+                        size = 16.dp,
+                        tint = HubInkSoft,
+                    )
+                }
+            }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val contentMinWidth = maxWidth
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                ) {
+                    SelectionContainer {
+                        if (structured) {
+                            Column(
+                                modifier = Modifier
+                                    .widthIn(min = contentMinWidth)
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                lines
+                                    .filterNot { it is MathLine.Plain && it.text.isBlank() }
+                                    .forEach { line -> MathLineView(line, HubInk) }
+                            }
+                        } else {
+                            Text(
+                                text = formatted,
+                                color = HubInk,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 17.sp,
+                                lineHeight = 28.sp,
+                                textAlign = TextAlign.Center,
+                                softWrap = false,
+                                modifier = Modifier
+                                    .widthIn(min = contentMinWidth)
+                                    .padding(start = 14.dp, end = 42.dp, bottom = 10.dp),
+                            )
                         }
-                    } else {
-                        Text(
-                            text = formatted,
-                            color = HubInk,
-                            fontFamily = FontFamily.Serif,
-                            fontSize = 17.sp,
-                            lineHeight = 28.sp,
-                            textAlign = TextAlign.Center,
-                            softWrap = false,
-                            modifier = Modifier
-                                .widthIn(min = contentMinWidth)
-                                .padding(horizontal = 14.dp, vertical = 11.dp),
-                        )
                     }
                 }
             }
-            MaterialSymbol(
-                resId = R.drawable.ic_copy,
-                contentDescription = "复制公式",
-                size = 16.dp,
-                tint = HubInkSoft,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .clip(CircleShape)
-                    .clickable {
-                        clipboard.setText(AnnotatedString(formatted))
-                        Toast.makeText(context, "已复制公式", Toast.LENGTH_SHORT).show()
-                    }
-                    .padding(4.dp),
-            )
         }
     }
 }
@@ -790,7 +824,7 @@ private fun MathLineView(line: MathLine, color: androidx.compose.ui.graphics.Col
         is MathLine.Plain -> Text(
             text = line.text,
             color = color,
-            fontFamily = FontFamily.Serif,
+            fontFamily = FontFamily.Monospace,
             fontSize = 17.sp,
             lineHeight = 28.sp,
             softWrap = false,
@@ -803,7 +837,7 @@ private fun MathLineView(line: MathLine, color: androidx.compose.ui.graphics.Col
                 Text(
                     text = line.prefix,
                     color = color,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = FontFamily.Monospace,
                     fontSize = 17.sp,
                     lineHeight = 28.sp,
                     softWrap = false,
@@ -819,7 +853,7 @@ private fun MathLineView(line: MathLine, color: androidx.compose.ui.graphics.Col
                 Text(
                     text = line.suffix,
                     color = color,
-                    fontFamily = FontFamily.Serif,
+                    fontFamily = FontFamily.Monospace,
                     fontSize = 17.sp,
                     lineHeight = 28.sp,
                     softWrap = false,
@@ -855,7 +889,7 @@ private fun MathDelimited(
             Text(
                 text = open,
                 color = color.copy(alpha = 0.75f),
-                fontFamily = FontFamily.Serif,
+                fontFamily = FontFamily.Monospace,
                 fontSize = delimiterSize,
                 lineHeight = delimiterSize,
                 softWrap = false,
@@ -872,7 +906,7 @@ private fun MathDelimited(
             Text(
                 text = close,
                 color = color.copy(alpha = 0.75f),
-                fontFamily = FontFamily.Serif,
+                fontFamily = FontFamily.Monospace,
                 fontSize = delimiterSize,
                 lineHeight = delimiterSize,
                 softWrap = false,
@@ -895,7 +929,7 @@ private fun FractionView(
         Text(
             text = MathText.format(numerator),
             color = color,
-            fontFamily = FontFamily.Serif,
+            fontFamily = FontFamily.Monospace,
             fontSize = 15.5.sp,
             lineHeight = 21.sp,
             softWrap = false,
@@ -911,7 +945,7 @@ private fun FractionView(
         Text(
             text = MathText.format(denominator),
             color = color,
-            fontFamily = FontFamily.Serif,
+            fontFamily = FontFamily.Monospace,
             fontSize = 15.5.sp,
             lineHeight = 21.sp,
             softWrap = false,

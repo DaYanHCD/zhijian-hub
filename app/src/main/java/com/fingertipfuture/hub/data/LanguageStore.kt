@@ -2,8 +2,6 @@ package com.fingertipfuture.hub.data
 
 import android.content.Context
 import android.content.res.Configuration
-import android.icu.text.Transliterator
-import android.os.Build
 import android.os.LocaleList
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +62,7 @@ object LanguageStore {
             } ?: AppLanguage.SIMPLIFIED_CHINESE
         }
         applyLocale(context, current)
+        TraditionalConverter.load(context)
     }
 
     fun select(context: Context, language: AppLanguage) {
@@ -122,7 +121,95 @@ private object TraditionalConverter {
         "语音通话" to "語音通話",
         "视频扩展" to "視訊擴充",
         "屏幕时间" to "螢幕使用時間",
+        "剪贴板" to "剪貼簿",
         "文件夹" to "資料夾",
+        "字符串" to "字串",
+        "服务器" to "伺服器",
+        "自动化任务" to "自動化任務",
+        "为什么" to "為什麼",
+        "什么" to "什麼",
+        "怎么" to "怎麼",
+        "这么" to "這麼",
+        "那么" to "那麼",
+        "多么" to "多麼",
+        "注册" to "註冊",
+        "内置" to "內建",
+        "控件" to "控制項",
+        "相册" to "相簿",
+        "实时" to "即時",
+        "点赞" to "按讚",
+        "赞赏作者" to "贊助作者",
+        "关于" to "關於",
+        "占用" to "佔用",
+        "联系" to "聯絡",
+        "线程" to "執行緒",
+        "内存" to "記憶體",
+        "磁盘" to "磁碟",
+        "设备" to "裝置",
+        "运行中" to "執行中",
+        "运行" to "執行",
+        "状态" to "狀態",
+        "路径" to "路徑",
+        "字节" to "位元組",
+        "对话框" to "對話框",
+        "余额" to "餘額",
+        "复制" to "複製",
+        "重复" to "重複",
+        "复杂" to "複雜",
+        "复习" to "複習",
+        "对于" to "對於",
+        "由于" to "由於",
+        "基于" to "基於",
+        "属于" to "屬於",
+        "等于" to "等於",
+        "互联网" to "網際網路",
+        "干什么" to "幹什麼",
+        "头发" to "頭髮",
+        "制作" to "製作",
+        "之后" to "之後",
+        "以后" to "以後",
+        "后来" to "後來",
+        "最后" to "最後",
+        "后台" to "後台",
+        "后退" to "後退",
+        "周一" to "週一",
+        "周二" to "週二",
+        "周三" to "週三",
+        "周四" to "週四",
+        "周五" to "週五",
+        "周六" to "週六",
+        "周日" to "週日",
+        "每周" to "每週",
+        "本周" to "本週",
+        "下周" to "下週",
+        "周末" to "週末",
+        "设置" to "設定",
+        "界面" to "介面",
+        "接口" to "介面",
+        "导出" to "匯出",
+        "导入" to "匯入",
+        "存储" to "儲存",
+        "本地" to "本機",
+        "在线" to "線上",
+        "粘贴" to "貼上",
+        "打印" to "列印",
+        "鼠标" to "滑鼠",
+        "短信" to "簡訊",
+        "彩信" to "多媒體訊息",
+        "代码" to "程式碼",
+        "字符" to "字元",
+        "这里" to "這裡",
+        "里面" to "裡面",
+        "哪里" to "哪裡",
+        "消息" to "訊息",
+        "菜单" to "選單",
+        "账户" to "帳戶",
+        "启动" to "啟動",
+        "启用" to "啟用",
+        "激活" to "啟用",
+        "添加" to "新增",
+        "关闭" to "關閉",
+        "删除" to "刪除",
         "软件" to "軟體",
         "网络" to "網路",
         "视频" to "影片",
@@ -152,13 +239,17 @@ private object TraditionalConverter {
         "联网搜索" to "聯網搜尋",
     ).entries.sortedByDescending { it.key.length }
 
-    private val transliterator: Transliterator? by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            runCatching { Transliterator.getInstance("Simplified-Traditional") }.getOrNull()
-        } else {
-            // API 24~28 没有 android.icu.text.Transliterator；仍会使用上面的常用词表转换。
-            null
-        }
+    @Volatile
+    private var charMap: Map<Char, Char> = emptyMap()
+
+    fun load(context: Context) {
+        charMap = runCatching {
+            val pairs = context.applicationContext.assets
+                .open("traditional_zh_tw.txt")
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+            parseTraditionalCharMap(pairs)
+        }.getOrDefault(emptyMap())
     }
 
     fun convert(text: String): String {
@@ -166,11 +257,21 @@ private object TraditionalConverter {
         phrases.forEach { (from, to) ->
             if (value.contains(from)) value = value.replace(from, to)
         }
-        return transliterateIfSupported(value)
+        if (charMap.isNotEmpty()) {
+            value = buildString(value.length) {
+                value.forEach { append(charMap[it] ?: it) }
+            }
+        }
+        // 个别旧系统转换表会使用日本字形「啓」；台湾标准统一为「啟」。
+        return value.replace('啓', '啟')
     }
+}
 
-    private fun transliterateIfSupported(value: String): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return value
-        return transliterator?.transliterate(value) ?: value
+/** 本地逐字转换表是「简体字符 + 繁体目标」连续成对存储，避免在旧系统依赖 ICU。 */
+internal fun parseTraditionalCharMap(pairs: String): Map<Char, Char> = buildMap {
+    var index = 0
+    while (index + 1 < pairs.length) {
+        put(pairs[index], pairs[index + 1])
+        index += 2
     }
 }

@@ -8,14 +8,14 @@ class UpdateRepositoryTest {
 
     @Test
     fun `version name cannot escape the download directory`() {
-        val name = UpdateRepository.safeApkFileName("../../evil/1.0.18")
+        val name = UpdateRepository.safeApkFileName("../../evil/1.0.57")
         assertFalse(name.contains('/'))
         assertFalse(name.contains('\\'))
-        assertEquals("hub-evil_1.0.18.apk", name)
+        assertEquals("hub-evil_1.0.57.apk", name)
     }
 
     @Test
     fun `normal version name is preserved`() {
-        assertEquals("hub-1.0.18.apk", UpdateRepository.safeApkFileName("1.0.18"))
+        assertEquals("hub-1.0.57.apk", UpdateRepository.safeApkFileName("1.0.57"))
     }
 }

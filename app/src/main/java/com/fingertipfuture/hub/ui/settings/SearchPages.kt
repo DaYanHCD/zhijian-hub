@@ -6,18 +6,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.CircularProgressIndicator
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,26 +27,36 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.fingertipfuture.hub.R
-import com.fingertipfuture.hub.data.ProviderStore
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.SearchApi
 import com.fingertipfuture.hub.data.SearchProvider
 import com.fingertipfuture.hub.data.SearchStore
 import com.fingertipfuture.hub.ui.component.HubBottomSheet
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
-import com.fingertipfuture.hub.ui.component.hubDialogCard
+import com.fingertipfuture.hub.ui.component.hubCardBorder
+import com.fingertipfuture.hub.ui.component.hubDropShadow
+import com.fingertipfuture.hub.ui.component.settingsCardColor
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
+import com.fingertipfuture.hub.ui.provider.FloatingCircleAction
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-/** 「测试搜索」用的那条查询。 */
-private const val TEST_QUERY = "指尖Hub"
 
 /** 搜索供应商的官方标志（彩色，来自 LobeHub icons）。 */
 private fun kindIcon(kind: String): Int = when (kind) {
@@ -65,7 +77,7 @@ private fun kindColored(kind: String): Boolean = kind in setOf(
     SearchProvider.KIND_FIRECRAWL,
 )
 
-/** 搜索设置：供应商列表 + 并行搜索 + 结果条数 + 右下角添加按钮。 */
+/** 搜索设置：结果条数 + 供应商列表 + 并行搜索 + 右上角添加按钮。 */
 @Composable
 internal fun SearchSettingsScreen(
     onBack: () -> Unit,
@@ -73,75 +85,83 @@ internal fun SearchSettingsScreen(
 ) {
     val context = LocalContext.current
     var showAdd by remember { mutableStateOf(false) }
-    var showMax by remember { mutableStateOf(false) }
+    var maxResultsText by remember { mutableStateOf(SearchStore.maxResults.toString()) }
     val items = SearchStore.items
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        SettingsPage(title = "搜索设置", onBack = onBack) {
-            SettingsGroup(title = "搜索供应商（" + items.size + "）") {
-                SettingsItem(
-                    title = "自动联网搜索已开启",
-                    subtitle = "只有需要实时信息时才搜索；普通闲聊、写作和翻译不会搜索",
-                    icon = R.drawable.ic_search,
-                    topDivider = false,
-                )
-                if (items.isEmpty()) {
-                    SettingsItem(title = "还没有搜索供应商", icon = R.drawable.ic_search)
-                }
-                items.forEach { provider ->
-                    SettingsItem(
-                        title = provider.name,
-                        subtitle = buildString {
-                            append(if (provider.deep) "全面模式" else "普通模式")
-                            if (!provider.inParallel) append(" · 未参与并行搜索")
-                        },
-                        icon = kindIcon(provider.kind),
-                        iconTint = if (kindColored(provider.kind)) Color.Unspecified else null,
-                        chevron = true,
-                        topDivider = true,
-                        onClick = { onOpenProvider(provider.id) },
-                    )
-                }
-            }
-            SettingsGroup(title = "并行搜索") {
-                if (items.isEmpty()) {
-                    SettingsItem(title = "先添加供应商", icon = R.drawable.ic_list, topDivider = false)
-                }
-                items.forEachIndexed { index, provider ->
-                    SettingsSwitchRow(
-                        title = provider.name,
-                subtitle = "与其他供应商并行调用",
-                        checked = provider.inParallel,
-                        topDivider = index != 0,
-                        onCheckedChange = { SearchStore.upsert(context, provider.copy(inParallel = it)) },
-                    )
-                }
-            }
-            SettingsGroup(title = "搜索结果") {
-                SettingsItem(
-                    title = "结果条数",
+    SettingsPage(
+        title = "搜索设置",
+        onBack = onBack,
+        topAction = {
+            FloatingCircleAction(
+                icon = R.drawable.ic_add,
+                contentDescription = "添加搜索供应商",
+                onClick = { showAdd = true },
+            )
+        },
+    ) {
+        SettingsGroup(title = null) {
+            SettingsItem(
+                title = "结果条数",
                 subtitle = "每次搜索返回的条数",
-                    icon = R.drawable.ic_list,
-                    value = SearchStore.maxResults.toString(),
-                    chevron = true,
-                    topDivider = false,
-                    onClick = { showMax = true },
+                icon = R.drawable.ic_list,
+                topDivider = false,
+                trailing = {
+                    OutlinedTextField(
+                        value = maxResultsText,
+                        onValueChange = { raw ->
+                            val digits = raw.filter(Char::isDigit).take(2)
+                            if (digits.isEmpty()) {
+                                maxResultsText = ""
+                            } else {
+                                val value = digits.toInt().coerceIn(1, 50)
+                                maxResultsText = value.toString()
+                                if (value != SearchStore.maxResults) {
+                                    SearchStore.setMaxResults(context, value)
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = TextStyle(
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center,
+                        ).enforceHubTypography(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(82.dp),
+                    )
+                },
+            )
+        }
+        SettingsGroup(title = "搜索供应商（" + items.size + "）") {
+            items.forEachIndexed { index, provider ->
+                SettingsItem(
+                    title = provider.name,
+                    subtitle = if (provider.deep) "全面模式" else "普通模式",
+                    icon = kindIcon(provider.kind),
+                    iconTint = if (kindColored(provider.kind)) Color.Unspecified else null,
+                    topDivider = index != 0,
+                    onClick = { onOpenProvider(provider.id) },
+                    trailing = {
+                        Switch(
+                            checked = provider.enabled,
+                            onCheckedChange = { enabled ->
+                                SearchStore.upsert(context, provider.copy(enabled = enabled))
+                            },
+                        )
+                    },
                 )
             }
         }
-        FloatingActionButton(
-            onClick = { showAdd = true },
-            containerColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = PAGE_HORIZONTAL_MARGIN, bottom = 20.dp),
-        ) {
-            MaterialSymbol(
-                resId = R.drawable.ic_add,
-                contentDescription = "添加搜索供应商",
-                size = 24.dp,
-                tint = MaterialTheme.colorScheme.onPrimary,
-            )
+        SettingsGroup(title = "并行搜索") {
+            items.forEachIndexed { index, provider ->
+                SettingsSwitchRow(
+                    title = provider.name,
+                    checked = provider.inParallel,
+                    enabled = provider.enabled,
+                    topDivider = index != 0,
+                    onCheckedChange = { SearchStore.upsert(context, provider.copy(inParallel = it)) },
+                )
+            }
         }
     }
 
@@ -191,30 +211,6 @@ internal fun SearchSettingsScreen(
             }
         }
     }
-
-    if (showMax) {
-        var text by remember { mutableStateOf(SearchStore.maxResults.toString()) }
-        AlertDialog(
-            onDismissRequest = { showMax = false },
-            modifier = Modifier.hubDialogCard(),
-            title = { Text("每次搜几条？") },
-            text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    text.trim().toIntOrNull()?.let { SearchStore.setMaxResults(context, it) }
-                    showMax = false
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { showMax = false }) { Text("取消") } },
-        )
-    }
 }
 
 /** 一个搜索供应商的配置页：API Key / 模式 / 测试搜索 / 保存。 */
@@ -225,40 +221,76 @@ internal fun SearchProviderConfigScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val original = SearchStore.byId(providerId) ?: return
+    val original = SearchStore.byId(providerId)
+    if (original == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
     var draft by remember(providerId) { mutableStateOf(original) }
     var testing by remember { mutableStateOf(false) }
     var apiKeyVisible by remember(providerId) { mutableStateOf(false) }
+    var testQuery by remember(providerId) { mutableStateOf("") }
+    var testResults by remember(providerId) { mutableStateOf<List<SearchApi.Hit>>(emptyList()) }
     val modeLabels = listOf("普通模式", "全面模式")
 
-    SettingsPage(title = original.name, onBack = onBack) {
-        SettingsGroup(title = "状态") {
-            SettingsSwitchRow(
-                title = "启用这个供应商",
-                subtitle = "关闭后不参与聊天联网搜索，也不参与并行搜索",
-                checked = draft.enabled,
-                topDivider = false,
-                onCheckedChange = { draft = draft.copy(enabled = it) },
-            )
-            SettingsSwitchRow(
-                title = "参与并行搜索",
-                subtitle = if (SearchStore.parallel.any { it.id != draft.id }) {
-                    "打开后会和其他已开启的供应商一起并行调用"
-                } else {
-                    "当前没有其他并行供应商，打开后会作为主搜索"
-                },
-                checked = draft.inParallel,
-                onCheckedChange = { draft = draft.copy(inParallel = it) },
-            )
+    LaunchedEffect(draft) {
+        if (draft != original) {
+            delay(350)
+            SearchStore.upsert(context, draft)
         }
+    }
 
-        SettingsGroup(title = "接入") {
-            // Bing 是免费的抓取方案，不需要 Key
-            if (draft.kind != SearchProvider.KIND_BING) {
+    fun runTest() {
+        val query = testQuery.trim()
+        if (query.isEmpty()) {
+            context.showLocalizedToast("先输入测试关键词")
+            return
+        }
+        if (testing) return
+        testing = true
+        testResults = emptyList()
+        scope.launch {
+            val result = SearchApi.search(draft, query, SearchStore.maxResults)
+            testing = false
+            result.onSuccess { hits ->
+                testResults = hits
+            }.onFailure { error ->
+                context.showLocalizedToast(
+                    "搜索失败：" + (error.message ?: "未知错误"),
+                    Toast.LENGTH_LONG,
+                )
+            }
+        }
+    }
+
+    SettingsPage(
+        title = original.name,
+        scrollKey = "search-provider|$providerId",
+        onBack = {
+            SearchStore.upsert(context, draft)
+            onBack()
+        },
+        topAction = if (draft.kind == SearchProvider.KIND_BING) {
+            null
+        } else {
+            {
+                FloatingCircleAction(
+                    icon = R.drawable.ic_delete,
+                    contentDescription = "删除搜索供应商",
+                    onClick = {
+                        SearchStore.remove(context, draft.id)
+                        onBack()
+                    },
+                )
+            }
+        },
+    ) {
+        if (draft.kind != SearchProvider.KIND_BING) {
+            SettingsGroup(title = "API 密钥") {
                 OutlinedTextField(
                     value = draft.apiKey,
                     onValueChange = { draft = draft.copy(apiKey = it) },
-                    label = { Text("API Key") },
+                    label = { Text("API 密钥") },
                     singleLine = true,
                     visualTransformation = if (apiKeyVisible) {
                         VisualTransformation.None
@@ -279,76 +311,14 @@ internal fun SearchProviderConfigScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                )
-            }
-            if (draft.kind == SearchProvider.KIND_SEARXNG) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = draft.baseUrl,
-                    onValueChange = { draft = draft.copy(baseUrl = it) },
-                    label = { Text("SearXNG 地址") },
-                    placeholder = { Text("http://192.168.1.10:8080") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                )
-            }
-            if (draft.kind == SearchProvider.KIND_GOOGLE) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = draft.baseUrl,
-                    onValueChange = { draft = draft.copy(baseUrl = it) },
-                    label = { Text("cx（搜索引擎 id）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = draft.name,
-                onValueChange = { draft = draft.copy(name = it) },
-                label = { Text("显示名称") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
-            )
-            if (draft.kind == SearchProvider.KIND_DEEPSEEK) {
-                SettingsItem(
-                    title = "沿用聊天里的 DeepSeek Key",
-                    subtitle = "直接使用已经配置好的 DeepSeek 提供商 API Key",
-                    icon = R.drawable.ic_brand_deepseek,
-                    iconTint = Color.Unspecified,
-                    topDivider = false,
-                    onClick = {
-                        val key = ProviderStore.providers
-                            .firstOrNull {
-                                (it.logo == "deepseek" || it.baseUrl.contains("api.deepseek.com")) &&
-                                    it.apiKey.isNotBlank()
-                            }
-                            ?.apiKey
-                        if (key.isNullOrBlank()) {
-                            Toast.makeText(context, "还没有可沿用的 DeepSeek Key", Toast.LENGTH_SHORT).show()
-                        } else {
-                            draft = draft.copy(apiKey = key)
-                            Toast.makeText(context, "已沿用 DeepSeek Key", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                )
-                SettingsItem(
-                    title = "官方计费",
-                    subtitle = "每 1000 次成功 Search 请求 5 元，失败不计费；全面模式会取正文，仍只算一次 Search",
-                    icon = R.drawable.ic_info,
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                 )
             }
         }
 
-        SettingsGroup(title = "模式") {
-            SettingsChoiceRow(
-                title = "搜索模式",
-                subtitle = if (draft.kind == SearchProvider.KIND_DEEPSEEK) {
-                    "普通：摘要；全面：摘要 + 网页正文（仍只算一次 Search）"
-                } else {
-                    "普通：标题 / 链接 / 摘要；全面：更完整，更费额度"
-                },
+        SettingsGroup(title = "搜索模式") {
+            SettingsSlidingChoiceRow(
+                title = "模式",
                 value = modeLabels[if (draft.deep) 1 else 0],
                 options = modeLabels,
                 topDivider = false,
@@ -356,57 +326,147 @@ internal fun SearchProviderConfigScreen(
             )
         }
 
-        SettingsGroup(title = "测试") {
-            SettingsItem(
-                title = if (testing) "正在测试…" else "测试搜索",
-                subtitle = "用「" + TEST_QUERY + "」发一次测试查询",
-                icon = R.drawable.ic_search,
-                topDivider = false,
-                onClick = {
-                    if (!testing) {
-                        testing = true
-                        scope.launch {
-                            val result = SearchApi.search(draft, TEST_QUERY, SearchStore.maxResults)
-                            testing = false
-                            result.onSuccess { hits ->
-                                val head = hits.take(3).joinToString("\n") { "· " + it.title }
-                                Toast.makeText(
-                                    context,
-                                    "通了，" + hits.size + " 条结果：\n" + head,
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }.onFailure { error ->
-                                Toast.makeText(
-                                    context,
-                                    "没通：" + (error.message ?: "未知错误"),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        }
-                    }
-                },
-            )
+        SearchTestCard(
+            query = testQuery,
+            testing = testing,
+            onQueryChange = { testQuery = it },
+            onRun = ::runTest,
+        )
+        if (testResults.isNotEmpty()) {
+            SearchTestResultLinks(results = testResults)
         }
+    }
+}
 
-        SettingsGroup(title = "保存") {
-            SettingsItem(
-                title = "保存",
-                icon = R.drawable.ic_edit,
-                topDivider = false,
-                onClick = {
-                    SearchStore.upsert(context, draft)
-                    Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
-                    onBack()
-                },
+/** 按参考图重做的测试搜索卡片：标题、可编辑关键词、右侧播放按钮。 */
+@Composable
+private fun SearchTestCard(
+    query: String,
+    testing: Boolean,
+    onQueryChange: (String) -> Unit,
+    onRun: () -> Unit,
+) {
+    val shape = RoundedCornerShape(20.dp)
+    val canRun = query.isNotBlank() && !testing
+
+    androidx.compose.material3.Surface(
+        color = settingsCardColor(),
+        shape = shape,
+        modifier = Modifier
+            .fillMaxWidth()
+            .hubDropShadow(shape)
+            .hubCardBorder(shape),
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Text(
+                text = "测试搜索",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            SettingsItem(
-                title = "删除这个供应商",
-                icon = R.drawable.ic_delete,
-                onClick = {
-                    SearchStore.remove(context, draft.id)
-                    onBack()
-                },
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = { Text("输入测试查询…") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = canRun, onClick = onRun),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (testing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        MaterialSymbol(
+                            resId = R.drawable.ic_play,
+                            contentDescription = "开始测试搜索",
+                            size = 28.dp,
+                            tint = if (canRun) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 测试搜索完成后，在卡片下方列出结果标题与可点击链接。 */
+@Composable
+private fun SearchTestResultLinks(results: List<SearchApi.Hit>) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val shape = RoundedCornerShape(20.dp)
+
+    androidx.compose.material3.Surface(
+        color = settingsCardColor(),
+        shape = shape,
+        modifier = Modifier
+            .fillMaxWidth()
+            .hubDropShadow(shape)
+            .hubCardBorder(shape),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+            Text(
+                text = "测试结果",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
             )
+            results.forEachIndexed { index, hit ->
+                if (index != 0) {
+                    androidx.compose.material3.HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                }
+                Text(
+                    text = hit.title.ifBlank { hit.url },
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = hit.url,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable {
+                        val scheme = runCatching {
+                            android.net.Uri.parse(hit.url).scheme?.lowercase()
+                        }.getOrNull()
+                        if (scheme != "http" && scheme != "https") {
+                            context.showLocalizedToast("搜索结果链接不受支持")
+                        } else {
+                            runCatching { uriHandler.openUri(hit.url) }
+                                .onFailure {
+                                    context.showLocalizedToast("打不开这个搜索结果链接")
+                                }
+                        }
+                    },
+                )
+            }
         }
     }
 }

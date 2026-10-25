@@ -1,6 +1,7 @@
 package com.fingertipfuture.hub.data
 
 import com.fingertipfuture.hub.update.HubAnnouncement
+import com.fingertipfuture.hub.update.parseAnnouncement
 import java.text.SimpleDateFormat
 import java.util.Locale
 import org.junit.Assert.assertFalse
@@ -35,5 +36,28 @@ class AnnouncementTest {
         assertFalse(base.copy(active = false).isCurrentlyVisible(now))
         assertFalse(base.copy(title = "").isCurrentlyVisible(now))
         assertFalse(base.copy(id = "").isCurrentlyVisible(now))
+    }
+
+    @Test
+    fun `server announcement json is parsed`() {
+        val announcement = parseAnnouncement(
+            """
+            {
+              "id": "2026-10-25-001",
+              "active": true,
+              "title": "维护通知",
+              "message": "今晚维护",
+              "level": "warning",
+              "url": "https://fingertipfuture.com/",
+              "publishedAt": "2026-10-25",
+              "expiresAt": "2026-10-26"
+            }
+            """.trimIndent(),
+        )!!
+
+        assertTrue(announcement.isCurrentlyVisible(now))
+        assertTrue(announcement.active)
+        assertTrue(announcement.title == "维护通知")
+        assertTrue(announcement.level == "warning")
     }
 }

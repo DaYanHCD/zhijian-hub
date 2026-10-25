@@ -9,7 +9,9 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.fingertipfuture.hub.data.AssistantReminderStore
 import com.fingertipfuture.hub.data.ChatSearchHit
+import com.fingertipfuture.hub.data.ChatStore
 import com.fingertipfuture.hub.data.HubProvider
 import com.fingertipfuture.hub.data.ProviderStore
 import com.fingertipfuture.hub.ui.chat.ChatRecommendationDestination
@@ -22,12 +24,12 @@ import com.fingertipfuture.hub.ui.settings.AssistantDetailScreen
 import com.fingertipfuture.hub.ui.settings.AssistantListScreen
 import com.fingertipfuture.hub.ui.settings.AssistantMemoryScreen
 import com.fingertipfuture.hub.ui.settings.AssistantPromptScreen
+import com.fingertipfuture.hub.ui.settings.AssistantRemindersScreen
+import com.fingertipfuture.hub.ui.settings.AllAssistantRemindersScreen
+import com.fingertipfuture.hub.ui.settings.AutomationTasksScreen
 import com.fingertipfuture.hub.ui.settings.AssistantSkillScreen
-import com.fingertipfuture.hub.ui.settings.AttachmentLibraryScreen
 import com.fingertipfuture.hub.ui.settings.BackupScreen
 import com.fingertipfuture.hub.ui.settings.ContactScreen
-import com.fingertipfuture.hub.ui.settings.GeneralBehaviorScreen
-import com.fingertipfuture.hub.ui.settings.InterfaceScreen
 import com.fingertipfuture.hub.ui.settings.InfoSectionsScreen
 import com.fingertipfuture.hub.ui.settings.ModelDefaultsScreen
 import com.fingertipfuture.hub.ui.settings.PreferenceScreen
@@ -37,7 +39,9 @@ import com.fingertipfuture.hub.ui.settings.SearchProviderConfigScreen
 import com.fingertipfuture.hub.ui.settings.SkillEditScreen
 import com.fingertipfuture.hub.ui.settings.SkillManageScreen
 import com.fingertipfuture.hub.ui.settings.DataManagementScreen
-import com.fingertipfuture.hub.ui.settings.WebDavBackupScreen
+import com.fingertipfuture.hub.ui.settings.FloatingSearchScreen
+import com.fingertipfuture.hub.ui.settings.StorageAttachmentCategory
+import com.fingertipfuture.hub.ui.settings.StorageAttachmentDetailScreen
 import com.fingertipfuture.hub.ui.update.ChangelogScreen
 import com.fingertipfuture.hub.ui.update.AnnouncementDialogHost
 import com.fingertipfuture.hub.ui.update.UpdateDialogHost
@@ -55,17 +59,23 @@ private sealed interface HubRoute {
 
     data object Settings : HubRoute
     data object Stats : HubRoute
+    data object FloatingSearch : HubRoute
 
     // ---- 通用设置 ----
     data object Preference : HubRoute
-    data object GeneralBehavior : HubRoute
-    data object Interface : HubRoute
     data object Assistants : HubRoute
+    data object Reminders : HubRoute
+    data object ReminderTasks : HubRoute
     data class AssistantDetail(val id: String) : HubRoute
     data class AssistantBasic(val id: String) : HubRoute
     data class AssistantPrompt(val id: String) : HubRoute
     data class AssistantSkill(val id: String) : HubRoute
     data class AssistantMemory(val id: String) : HubRoute
+    data class AssistantReminders(
+        val id: String,
+        val highlightId: String? = null,
+        val fromOverview: Boolean = false,
+    ) : HubRoute
     data object Skills : HubRoute
     data class SkillEdit(val id: String) : HubRoute
 
@@ -81,8 +91,7 @@ private sealed interface HubRoute {
     data object Backup : HubRoute
     data object Storage : HubRoute
     data object ChatSearch : HubRoute
-    data object Attachments : HubRoute
-    data object WebDavBackup : HubRoute
+    data class StorageAttachments(val category: StorageAttachmentCategory) : HubRoute
 
     // ---- 关于 ----
     data object About : HubRoute
@@ -97,15 +106,18 @@ private fun HubRoute.key(): String = when (this) {
     HubRoute.Chat -> "chat"
     HubRoute.Settings -> "settings"
     HubRoute.Stats -> "stats"
+    HubRoute.FloatingSearch -> "floating-search"
     HubRoute.Preference -> "preference"
-    HubRoute.GeneralBehavior -> "general"
-    HubRoute.Interface -> "interface"
     HubRoute.Assistants -> "assistants"
+    HubRoute.Reminders -> "reminders"
+    HubRoute.ReminderTasks -> "reminder-tasks"
     is HubRoute.AssistantDetail -> "assistant-detail|$id"
     is HubRoute.AssistantBasic -> "assistant-basic|$id"
     is HubRoute.AssistantPrompt -> "assistant-prompt|$id"
     is HubRoute.AssistantSkill -> "assistant-skill|$id"
     is HubRoute.AssistantMemory -> "assistant-memory|$id"
+    is HubRoute.AssistantReminders -> "assistant-reminders|$id|" +
+        "${highlightId.orEmpty()}|${if (fromOverview) 1 else 0}"
     HubRoute.Skills -> "skills"
     is HubRoute.SkillEdit -> "skill-edit|$id"
     HubRoute.ModelDefaults -> "model-defaults"
@@ -117,8 +129,7 @@ private fun HubRoute.key(): String = when (this) {
     HubRoute.Backup -> "backup"
     HubRoute.Storage -> "storage"
     HubRoute.ChatSearch -> "chat-search"
-    HubRoute.Attachments -> "attachments"
-    HubRoute.WebDavBackup -> "webdav"
+    is HubRoute.StorageAttachments -> "storage-attachments|${category.name}"
     HubRoute.About -> "about"
     HubRoute.Changelog -> "changelog"
     HubRoute.Thanks -> "thanks"
@@ -133,15 +144,24 @@ private fun routeFromKey(key: String): HubRoute {
         "chat" -> HubRoute.Chat
         "settings" -> HubRoute.Settings
         "stats" -> HubRoute.Stats
+        "floating-search" -> HubRoute.FloatingSearch
         "preference" -> HubRoute.Preference
-        "general" -> HubRoute.GeneralBehavior
-        "interface" -> HubRoute.Interface
         "assistants" -> HubRoute.Assistants
+        "reminders" -> HubRoute.Reminders
+        "reminder-tasks" -> HubRoute.ReminderTasks
         "assistant-detail" -> HubRoute.AssistantDetail(id)
         "assistant-basic" -> HubRoute.AssistantBasic(id)
         "assistant-prompt" -> HubRoute.AssistantPrompt(id)
         "assistant-skill" -> HubRoute.AssistantSkill(id)
         "assistant-memory" -> HubRoute.AssistantMemory(id)
+        "assistant-reminders" -> {
+            val parts = key.split('|')
+            HubRoute.AssistantReminders(
+                id = parts.getOrNull(1).orEmpty(),
+                highlightId = parts.getOrNull(2)?.takeIf { it.isNotBlank() },
+                fromOverview = parts.getOrNull(3) == "1",
+            )
+        }
         "skills" -> HubRoute.Skills
         "skill-edit" -> HubRoute.SkillEdit(id)
         "model-defaults" -> HubRoute.ModelDefaults
@@ -153,8 +173,13 @@ private fun routeFromKey(key: String): HubRoute {
         "backup" -> HubRoute.Backup
         "storage" -> HubRoute.Storage
         "chat-search" -> HubRoute.ChatSearch
-        "attachments" -> HubRoute.Attachments
-        "webdav" -> HubRoute.WebDavBackup
+        "storage-attachments" -> HubRoute.StorageAttachments(
+            StorageAttachmentCategory.entries.firstOrNull { it.name == id }
+                ?: StorageAttachmentCategory.IMAGES,
+        )
+        "attachments" -> HubRoute.StorageAttachments(StorageAttachmentCategory.IMAGES)
+        "extensions" -> HubRoute.Storage
+        "webdav" -> HubRoute.Backup
         "about" -> HubRoute.About
         "changelog" -> HubRoute.Changelog
         "thanks" -> HubRoute.Thanks
@@ -165,7 +190,10 @@ private fun routeFromKey(key: String): HubRoute {
 }
 
 @Composable
-fun HubApp() {
+fun HubApp(
+    initialReminderId: String? = null,
+    onReminderOpenHandled: () -> Unit = {},
+) {
     val context = LocalContext.current
     var route by rememberSaveable(
         stateSaver = Saver<HubRoute, String>(
@@ -175,9 +203,20 @@ fun HubApp() {
     ) { mutableStateOf<HubRoute>(HubRoute.Chat) }
     var pendingChatSearchHit by remember { mutableStateOf<ChatSearchHit?>(null) }
     var recommendationReturnToChat by remember { mutableStateOf(false) }
+    // 数据管理 / 隐私 / 关于可从不同页面进入；返回时回到真正的来源页。
+    var subPageParent by rememberSaveable(
+        stateSaver = Saver<HubRoute, String>(
+            save = { it.key() },
+            restore = ::routeFromKey,
+        ),
+    ) { mutableStateOf<HubRoute>(HubRoute.Settings) }
 
     fun newId() = "p" + System.currentTimeMillis()
     fun toSettings() { route = HubRoute.Settings }
+    fun openSubPage(target: HubRoute, from: HubRoute) {
+        subPageParent = from
+        route = target
+    }
     fun backFromRecommendation(fallback: HubRoute) {
         if (recommendationReturnToChat) {
             recommendationReturnToChat = false
@@ -185,6 +224,25 @@ fun HubApp() {
         } else {
             route = fallback
         }
+    }
+
+    LaunchedEffect(initialReminderId) {
+        val reminderId = initialReminderId ?: return@LaunchedEffect
+        val reminder = AssistantReminderStore.byId(reminderId)
+        if (reminder == null) {
+            route = HubRoute.ReminderTasks
+        } else if (
+            reminder.conversationId.isNotBlank() &&
+            ChatStore.currentConversationId == reminder.conversationId
+        ) {
+            route = HubRoute.Chat
+        } else {
+            route = HubRoute.AssistantReminders(
+                id = reminder.assistantId,
+                highlightId = reminder.id,
+            )
+        }
+        onReminderOpenHandled()
     }
 
     LaunchedEffect(route) {
@@ -195,7 +253,12 @@ fun HubApp() {
         HubRoute.Chat -> ChatScreen(
             onOpenSettings = { route = HubRoute.Settings },
             onOpenStats = { route = HubRoute.Stats },
-            onOpenPrivacy = { route = HubRoute.Privacy },
+            onOpenFloatingSearch = { route = HubRoute.FloatingSearch },
+            onOpenPrivacy = { openSubPage(HubRoute.Privacy, HubRoute.Chat) },
+            onOpenSearchSettings = {
+                recommendationReturnToChat = true
+                route = HubRoute.SearchSettings
+            },
             onOpenRecommendation = { destination ->
                 recommendationReturnToChat = true
                 route = when (destination) {
@@ -208,18 +271,20 @@ fun HubApp() {
         )
 
         HubRoute.Stats -> StatsScreen(onBack = { route = HubRoute.Chat })
+        HubRoute.FloatingSearch -> FloatingSearchScreen(onBack = { route = HubRoute.Chat })
         HubRoute.Settings -> SettingsScreen(
             onBack = { route = HubRoute.Chat },
             onOpenPreference = { route = HubRoute.Preference },
             onOpenAssistant = { route = HubRoute.Assistants },
+            onOpenReminders = { route = HubRoute.Reminders },
             onOpenSkill = { route = HubRoute.Skills },
             onOpenModelDefaults = { route = HubRoute.ModelDefaults },
             onOpenProviders = { route = HubRoute.Providers },
             onOpenSearch = { route = HubRoute.SearchSettings },
-            onOpenPrivacy = { route = HubRoute.Privacy },
-            onOpenBackup = { route = HubRoute.Backup },
-            onOpenStorage = { route = HubRoute.Storage },
-            onOpenAbout = { route = HubRoute.About },
+            onOpenPrivacy = { openSubPage(HubRoute.Privacy, HubRoute.Settings) },
+            onOpenBackup = { openSubPage(HubRoute.Backup, HubRoute.Settings) },
+            onOpenStorage = { openSubPage(HubRoute.Storage, HubRoute.Settings) },
+            onOpenAbout = { openSubPage(HubRoute.About, HubRoute.Settings) },
             onOpenThanks = { route = HubRoute.Thanks },
             onOpenManual = { route = HubRoute.Manual },
             onOpenContact = { route = HubRoute.Contact },
@@ -228,14 +293,17 @@ fun HubApp() {
         // ---- 通用设置 ----
         HubRoute.Preference -> PreferenceScreen(
             onBack = { toSettings() },
-            onOpenGeneral = { route = HubRoute.GeneralBehavior },
-            onOpenInterface = { route = HubRoute.Interface },
         )
-        HubRoute.GeneralBehavior -> GeneralBehaviorScreen(onBack = { route = HubRoute.Preference })
-        HubRoute.Interface -> InterfaceScreen(onBack = { route = HubRoute.Preference })
         HubRoute.Assistants -> AssistantListScreen(
             onBack = { toSettings() },
             onOpenAssistant = { id -> route = HubRoute.AssistantDetail(id) },
+        )
+        HubRoute.Reminders -> AutomationTasksScreen(
+            onBack = { toSettings() },
+            onOpenReminderTasks = { route = HubRoute.ReminderTasks },
+        )
+        HubRoute.ReminderTasks -> AllAssistantRemindersScreen(
+            onBack = { route = HubRoute.Reminders },
         )
         is HubRoute.AssistantDetail -> AssistantDetailScreen(
             assistantId = r.id,
@@ -249,6 +317,12 @@ fun HubApp() {
         is HubRoute.AssistantPrompt -> AssistantPromptScreen(assistantId = r.id, onBack = { route = HubRoute.AssistantDetail(r.id) })
         is HubRoute.AssistantSkill -> AssistantSkillScreen(assistantId = r.id, onBack = { route = HubRoute.AssistantDetail(r.id) })
         is HubRoute.AssistantMemory -> AssistantMemoryScreen(assistantId = r.id, onBack = { route = HubRoute.AssistantDetail(r.id) })
+        is HubRoute.AssistantReminders -> AssistantRemindersScreen(
+            assistantId = r.id,
+            onBack = {
+                route = if (r.fromOverview) HubRoute.ReminderTasks else HubRoute.AssistantDetail(r.id)
+            },
+        )
         HubRoute.Skills -> SkillManageScreen(
             onBack = { toSettings() },
             onEditSkill = { id -> route = HubRoute.SkillEdit(id) },
@@ -265,7 +339,7 @@ fun HubApp() {
             providerId = r.id,
             onBack = { route = HubRoute.SearchSettings },
         )
-        HubRoute.Privacy -> PrivacyScreen(onBack = { toSettings() })
+        HubRoute.Privacy -> PrivacyScreen(onBack = { route = subPageParent })
 
         HubRoute.Providers -> ProvidersScreen(
             onBack = { backFromRecommendation(HubRoute.Settings) },
@@ -286,14 +360,13 @@ fun HubApp() {
 
         // ---- 数据管理 ----
         HubRoute.Backup -> BackupScreen(
-            onBack = { toSettings() },
-            onOpenWebDav = { route = HubRoute.WebDavBackup },
+            onBack = { route = subPageParent },
         )
-        HubRoute.WebDavBackup -> WebDavBackupScreen(onBack = { route = HubRoute.Backup })
         HubRoute.Storage -> DataManagementScreen(
-            onBack = { toSettings() },
-            onOpenAttachments = { route = HubRoute.Attachments },
-            onOpenChatSearch = { route = HubRoute.ChatSearch },
+            onBack = { route = subPageParent },
+            onOpenAttachmentCategory = { category ->
+                route = HubRoute.StorageAttachments(category)
+            },
         )
         HubRoute.ChatSearch -> ChatSearchOverlay(
             allConversations = true,
@@ -304,13 +377,14 @@ fun HubApp() {
                 route = HubRoute.Chat
             },
         )
-        HubRoute.Attachments -> AttachmentLibraryScreen(
+        is HubRoute.StorageAttachments -> StorageAttachmentDetailScreen(
+            category = r.category,
             onBack = { route = HubRoute.Storage },
         )
 
         // ---- 关于 ----
         HubRoute.About -> AboutScreen(
-            onBack = { toSettings() },
+            onBack = { route = subPageParent },
             onOpenChangelog = { route = HubRoute.Changelog },
         )
         HubRoute.Changelog -> ChangelogScreen(onBack = { route = HubRoute.About })
@@ -329,6 +403,8 @@ fun HubApp() {
 
     // 更新 / 更新日志的弹窗挂在**全局**：任何页面点「检查更新」都要能弹出来
     UpdateDialogHost()
-    // 公告也挂在全局：启动时拉一次，任何页面都能弹。
+    // 公告也挂在全局：只读取 APK 内置公告，不联网。
     AnnouncementDialogHost()
+    // 公共存储授权后才能把快照写到卸载后仍保留的 Documents 目录。
+    PersistentStorageAccessDialog()
 }

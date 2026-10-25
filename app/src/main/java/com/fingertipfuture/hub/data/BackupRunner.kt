@@ -24,12 +24,12 @@ import java.util.zip.ZipOutputStream
  */
 object BackupRunner {
 
-    private val stampFormat = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.CHINA)
     private val fileDirs = listOf("attachments", "voice", "avatars", "assistant_avatars")
     private const val MAX_ZIP_ENTRY_BYTES = 64L * 1024 * 1024
     private const val MAX_ZIP_TOTAL_BYTES = 512L * 1024 * 1024
 
-    private fun stamp(): String = stampFormat.format(Date())
+    private fun stamp(): String =
+        SimpleDateFormat("yyyyMMdd-HHmmss", Locale.CHINA).format(Date())
 
     fun chatBytes(flushFirst: Boolean = true): ByteArray? {
         val archive = ChatStore.exportArchive(flushFirst = flushFirst)
@@ -174,6 +174,7 @@ object BackupRunner {
         }
 
         var stagedFiles: File? = null
+        var fileCommit: StagedFileCommit? = null
         val backupDir = latestFiles?.let {
             File(context.cacheDir, "hub-restore-$it.backup").also { dir -> dir.deleteRecursively() }
         }
@@ -205,25 +206,35 @@ object BackupRunner {
                 }
             }
 
-            var importedIds: List<String> = emptyList()
-            archive?.let { imported ->
-                val result = withContext(Dispatchers.IO) { ChatStore.importArchiveDetailed(imported) }
-                importedIds = result.conversationIds
-                val messageCount = imported.sumOf { it.messages.size }
-                restored += "会话 " + result.count + " 段 / " + messageCount + " 条消息"
+            // 先把附件真正放进私有目录，聊天导入时的路径重映射才能找到它们。
+            stagedFiles?.let { staging ->
+                fileCommit = withContext(Dispatchers.IO) {
+                    installStagedFiles(context.filesDir, staging, requireNotNull(backupDir))
+                }
             }
 
-            // 全部解压成功后才碰本机文件；提交阶段失败会按文件回滚。
+            var importedIds: List<String> = emptyList()
             try {
-                stagedFiles?.let { staging ->
-                    val count = withContext(Dispatchers.IO) {
-                        commitStagedFiles(context.filesDir, staging, requireNotNull(backupDir))
+                archive?.let { imported ->
+                    val result = withContext(Dispatchers.IO) {
+                        ChatStore.importArchiveDetailed(imported)
                     }
-                    restored += "文件 " + count + " 个"
+                    importedIds = result.conversationIds
+                    val messageCount = imported.sumOf { it.messages.size }
+                    restored += "会话 " + result.count + " 段 / " + messageCount + " 条消息"
+                }
+                fileCommit?.let { commit ->
+                    withContext(Dispatchers.IO) { finishStagedFiles(commit) }
+                    restored += "文件 " + commit.count + " 个"
                 }
             } catch (t: Throwable) {
-                // 文件提交失败：把刚刚导入的会话也撤掉，避免“有会话没附件”。
-                withContext(Dispatchers.IO) { ChatStore.deleteImportedConversations(importedIds) }
+                withContext(Dispatchers.IO) {
+                    if (importedIds.isNotEmpty()) ChatStore.deleteImportedConversations(importedIds)
+                    fileCommit?.let { commit ->
+                        runCatching { rollbackStagedFiles(commit) }
+                            .onFailure(t::addSuppressed)
+                    }
+                }
                 throw t
             }
         } finally {
@@ -281,7 +292,13 @@ object BackupRunner {
         return count
     }
 
-    private data class InstalledFile(val target: File, val backup: File?)
+    internal data class InstalledFile(val target: File, val backup: File?)
+
+    internal data class StagedFileCommit(
+        val count: Int,
+        val backupRoot: File,
+        val installed: List<InstalledFile>,
+    )
 
     /**
      * 把 staging 里的文件搬到 App 私有目录。
@@ -290,7 +307,19 @@ object BackupRunner {
      * 这样不会出现“半个新包 + 半个旧包”的附件目录。
      */
     internal fun commitStagedFiles(root: File, staging: File, backupRoot: File): Int {
-        if (!staging.exists()) return 0
+        val commit = installStagedFiles(root, staging, backupRoot)
+        finishStagedFiles(commit)
+        return commit.count
+    }
+
+    internal fun installStagedFiles(
+        root: File,
+        staging: File,
+        backupRoot: File,
+    ): StagedFileCommit {
+        if (!staging.exists()) {
+            return StagedFileCommit(0, backupRoot, emptyList())
+        }
         backupRoot.mkdirs()
         val canonicalRoot = root.canonicalFile
         val installed = mutableListOf<InstalledFile>()
@@ -329,17 +358,39 @@ object BackupRunner {
                     }
                     installed += InstalledFile(target, backup)
                 }
-            backupRoot.deleteRecursively()
-            return installed.size
+            return StagedFileCommit(installed.size, backupRoot, installed.toList())
         } catch (t: Throwable) {
-            installed.asReversed().forEach { item ->
-                runCatching { item.target.delete() }
-                item.backup?.takeIf { it.isFile }?.let { old ->
-                    runCatching { old.renameTo(item.target) }
-                }
-            }
+            rollbackInstalledFiles(installed)
             throw t
         }
+    }
+
+    internal fun finishStagedFiles(commit: StagedFileCommit) {
+        commit.backupRoot.deleteRecursively()
+    }
+
+    internal fun rollbackStagedFiles(commit: StagedFileCommit) {
+        rollbackInstalledFiles(commit.installed)
+        commit.backupRoot.deleteRecursively()
+    }
+
+    private fun rollbackInstalledFiles(installed: List<InstalledFile>) {
+        var firstFailure: Throwable? = null
+        installed.asReversed().forEach { item ->
+            runCatching { item.target.delete() }
+                .onFailure { firstFailure = firstFailure ?: it }
+            item.backup?.takeIf { it.isFile }?.let { old ->
+                runCatching {
+                    old.parentFile?.mkdirs()
+                    item.target.parentFile?.mkdirs()
+                    if (!old.renameTo(item.target)) {
+                        old.copyTo(item.target, overwrite = true)
+                        old.delete()
+                    }
+                }.onFailure { firstFailure = firstFailure ?: it }
+            }
+        }
+        firstFailure?.let { throw IOException("恢复文件回滚失败", it) }
     }
 
     /** 只允许解压到固定的四个用户文件目录，并用 canonical path 防 ../ / 绝对路径穿越。 */

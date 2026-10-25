@@ -33,52 +33,33 @@ import java.util.concurrent.TimeUnit
 internal object DeviceContext {
 
     private const val MAX_CHARS = 20_000
-    private val timeFormat = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
+    private fun formatDeviceTime(timestamp: Long): String =
+        SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(timestamp))
 
-    suspend fun build(context: Context, assistant: HubAssistant, userText: String): DeviceContextResult =
-        withContext(Dispatchers.IO) {
-            val text = userText.lowercase(Locale.CHINA)
-            val parts = mutableListOf<String>()
-            val traces = mutableListOf<DeviceAccessTrace>()
-            var searchLocation = ""
-            var locationSummary = ""
-
+    /**
+     * 兼容旧调用：先按关键词算出本轮可能需要哪些设备数据，再统一交给 [readSelected]。
+     * 新 Agent 链路直接按工具调用传入 [readSelected]，不再依赖关键词预取。
+     */
+    suspend fun build(context: Context, assistant: HubAssistant, userText: String): DeviceContextResult {
+        val text = userText.lowercase(Locale.CHINA)
+        val requested = buildSet {
             if (assistant.permLocation &&
                 wants(
                     text,
                     "天气", "气温", "温度", "下雨", "降雨", "附近", "周边", "本地", "当地",
                     "位置", "在哪", "导航", "路线", "weather", "temperature", "nearby",
                 )
-            ) {
-                val location = runCatching { AttachmentStore.currentLocation(context) }.getOrNull()
-                if (location != null) {
-                    locationSummary = location.positionText()
-                    parts += "当前位置：" + locationSummary
-                    searchLocation = location.label.ifBlank {
-                        "%.5f,%.5f".format(Locale.US, location.lat, location.lon)
-                    }
-                } else if (!AttachmentStore.hasLocationPermission(context)) {
-                    locationSummary = "系统还没有授予定位权限"
-                    parts += "位置：助手开关已开，但系统还没有授予定位权限。"
-                } else {
-                    locationSummary = "暂时无法获取当前坐标"
-                    parts += "位置：暂时无法获取当前坐标。"
-                }
-            }
+            ) add("location")
             if (assistant.permScreenTime &&
                 wants(text, "屏幕时间", "使用时间", "用了多久", "手机用时", "screen time", "screen")
-            ) {
-                recordTrace("screen_time", "读取屏幕时间", screenTime(context), parts, traces)
-            }
+            ) add("screen_time")
             if (assistant.permCalendar &&
                 wants(
                     text,
                     "日历", "日程", "行程", "会议", "我的安排", "有什么安排",
                     "明天安排", "今天安排", "日程安排", "calendar", "schedule",
                 )
-            ) {
-                recordTrace("calendar", "读取日历", calendar(context), parts, traces)
-            }
+            ) add("calendar")
             if (assistant.permInstalledApps &&
                 wants(
                     text,
@@ -87,35 +68,90 @@ internal object DeviceContext {
                     "有没有病毒", "手机病毒", "可疑软件", "流氓软件",
                     "installed app", "app list", "package list",
                 )
-            ) {
-                recordTrace("apps", "读取已安装应用", installedApps(context), parts, traces)
-            }
+            ) add("apps")
             if (assistant.permContacts &&
                 wants(text, "联系人", "通讯录", "电话号码", "打给", "contact", "contacts")
-            ) {
-                recordTrace("contacts", "读取联系人", contacts(context), parts, traces)
-            }
-            if (assistant.permSms && wants(text, "短信", "sms")) {
-                recordTrace("sms", "读取短信", sms(context), parts, traces)
-            }
-            if (assistant.permMms && wants(text, "彩信", "mms")) {
-                recordTrace("mms", "读取彩信", mms(context), parts, traces)
-            }
+            ) add("contacts")
+            if (assistant.permSms && wants(text, "短信", "sms")) add("sms")
+            if (assistant.permMms && wants(text, "彩信", "mms")) add("mms")
             if (assistant.permActivity &&
                 wants(text, "步数", "走了多少步", "步行", "运动数据", "activity", "steps")
-            ) {
-                recordTrace("activity", "读取今日步数", stepCount(context), parts, traces)
-            }
+            ) add("activity")
+        }
+        return readSelected(context, assistant, requested)
+    }
 
-            if (parts.isEmpty()) return@withContext DeviceContextResult("", "", "", emptyList())
+    /**
+     * 只读取指定能力。供本地 ToolExecutor 调用，权限仍由 [assistant] 和 Android
+     * 系统权限双重检查，任何模型提示词都不能绕过这里。
+     */
+    suspend fun readSelected(
+        context: Context,
+        assistant: HubAssistant,
+        requested: Set<String>,
+    ): DeviceContextResult = withContext(Dispatchers.IO) {
+        val approximate = UiPrefs.approximatePermissions
+        val parts = mutableListOf<String>()
+        val traces = mutableListOf<DeviceAccessTrace>()
+        var searchLocation = ""
+        var locationSummary = ""
+
+        if ("location" in requested && assistant.permLocation) {
+            val location = runCatching { AttachmentStore.currentLocation(context) }.getOrNull()
+            if (location != null) {
+                locationSummary = location.positionText()
+                parts += if (approximate) {
+                    "当前位置（大致）：" + location.label.ifBlank { "已获取位置" }
+                } else {
+                    "当前位置：" + locationSummary
+                }
+                searchLocation = if (approximate) {
+                    location.label
+                } else {
+                    location.label.ifBlank { "%.5f,%.5f".format(Locale.US, location.lat, location.lon) }
+                }
+            } else if (!AttachmentStore.hasLocationPermission(context)) {
+                locationSummary = "系统还没有授予定位权限"
+                parts += "位置：助手开关已开，但系统还没有授予定位权限。"
+            } else {
+                locationSummary = "暂时无法获取当前坐标"
+                parts += "位置：暂时无法获取当前坐标。"
+            }
+        }
+        if ("screen_time" in requested && assistant.permScreenTime) {
+            recordTrace("screen_time", "读取屏幕时间", screenTime(context, approximate), parts, traces)
+        }
+        if ("calendar" in requested && assistant.permCalendar) {
+            recordTrace("calendar", "读取日历", calendar(context, approximate), parts, traces)
+        }
+        if ("apps" in requested && assistant.permInstalledApps) {
+            recordTrace("apps", "读取已安装应用", installedApps(context, approximate), parts, traces)
+        }
+        if ("contacts" in requested && assistant.permContacts) {
+            recordTrace("contacts", "读取联系人", contacts(context, approximate), parts, traces)
+        }
+        if ("sms" in requested && assistant.permSms) {
+            recordTrace("sms", "读取短信", sms(context, approximate), parts, traces)
+        }
+        if ("mms" in requested && assistant.permMms) {
+            recordTrace("mms", "读取彩信", mms(context, approximate), parts, traces)
+        }
+        if ("activity" in requested && assistant.permActivity) {
+            recordTrace("activity", "读取今日步数", stepCount(context, approximate), parts, traces)
+        }
+
+        if (parts.isEmpty()) {
+            DeviceContextResult("", "", "", emptyList())
+        } else {
             DeviceContextResult(
-                text = ("【设备上下文（用户已授权，仅本次回答使用）】\n" + parts.joinToString("\n"))
-                    .take(MAX_CHARS),
+                text = ("【设备工具结果（用户已授权，仅本次回答使用）】\n" +
+                    parts.joinToString("\n")).take(MAX_CHARS),
                 searchLocation = searchLocation,
                 locationSummary = locationSummary,
                 accessTraces = traces,
             )
         }
+    }
 
     private fun recordTrace(
         kind: String,
@@ -145,7 +181,7 @@ internal object DeviceContext {
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     @Suppress("DEPRECATION")
-    private fun screenTime(context: Context): String? {
+    private fun screenTime(context: Context, approximate: Boolean): String? {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
             ?: return "屏幕时间：系统不支持读取。"
         val mode = if (Build.VERSION.SDK_INT >= 29) {
@@ -180,10 +216,14 @@ internal object DeviceContext {
         ).orEmpty().filter { it.totalTimeInForeground > 0 }
         if (stats.isEmpty()) return "屏幕时间：今天还没有可读的使用记录。"
         val totalMinutes = stats.sumOf { it.totalTimeInForeground } / 60_000
-        val top = stats.sortedByDescending { it.totalTimeInForeground }.take(5).map {
+        val ranked = stats.sortedByDescending { it.totalTimeInForeground }.map {
             appLabel(context, it.packageName) + " " + (it.totalTimeInForeground / 60_000) + " 分钟"
         }
-        return "屏幕时间（今天）：约 " + totalMinutes + " 分钟；" + top.joinToString("、")
+        return if (approximate) {
+            "屏幕时间摘要（今天）：约 $totalMinutes 分钟。"
+        } else {
+            "屏幕时间（今天）：约 $totalMinutes 分钟；" + ranked.joinToString("、")
+        }
     }
 
     private fun appLabel(context: Context, packageName: String): String =
@@ -192,34 +232,61 @@ internal object DeviceContext {
             pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
         }.getOrDefault(packageName)
 
-    private fun calendar(context: Context): String? {
+    private fun calendar(context: Context, approximate: Boolean): String? {
         if (!has(context, Manifest.permission.READ_CALENDAR)) {
             return "日历：助手开关已开，但系统还没有授予日历读取权限。"
         }
-        val begin = System.currentTimeMillis()
-        val end = begin + 7L * 24 * 60 * 60 * 1000
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(begin.toString())
-            .appendPath(end.toString())
-            .build()
         val rows = mutableListOf<String>()
-        context.contentResolver.query(
-            uri,
-            arrayOf(CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN),
-            null,
-            null,
-            CalendarContract.Instances.BEGIN + " ASC",
-        )?.use { cursor ->
-            while (cursor.moveToNext() && rows.size < 12) {
-                val title = cursor.getString(0).orEmpty().ifBlank { "未命名日程" }
-                val at = cursor.getLong(1)
-                rows += "- " + timeFormat.format(Date(at)) + " " + title
+        if (approximate) {
+            val begin = System.currentTimeMillis()
+            val end = begin + 7L * 24 * 60 * 60 * 1000
+            val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+                .appendPath(begin.toString())
+                .appendPath(end.toString())
+                .build()
+            context.contentResolver.query(
+                uri,
+                arrayOf(CalendarContract.Instances._ID),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) rows += "event"
+            }
+        } else {
+            context.contentResolver.query(
+                CalendarContract.Events.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Events.TITLE,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DTEND,
+                    CalendarContract.Events.RRULE,
+                ),
+                "${CalendarContract.Events.DELETED}=0",
+                null,
+                "${CalendarContract.Events.DTSTART} ASC",
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val title = cursor.getString(0).orEmpty().ifBlank { "未命名日程" }
+                    val beginAt = cursor.getLong(1)
+                    val endAt = cursor.getLong(2)
+                    val recurring = !cursor.getString(3).isNullOrBlank()
+                    var line = "- " + formatDeviceTime(beginAt)
+                    if (endAt > beginAt) line += " 至 " + formatDeviceTime(endAt)
+                    line += " " + title
+                    if (recurring) line += "（重复）"
+                    rows += line
+                }
             }
         }
-        return if (rows.isEmpty()) "日历：未来 7 天没有读到日程。" else "日历（未来 7 天）：\n" + rows.joinToString("\n")
+        return when {
+            rows.isEmpty() -> "日历：没有读到日程。"
+            approximate -> "日历摘要：未来 7 天共有 ${rows.size} 项日程。"
+            else -> "日历（全部可读事项）：\n" + rows.joinToString("\n")
+        }
     }
 
-    private fun installedApps(context: Context): String? {
+    private fun installedApps(context: Context, approximate: Boolean): String? {
         val pm = context.packageManager
         @Suppress("DEPRECATION")
         val apps = pm.getInstalledApplications(0)
@@ -241,6 +308,9 @@ internal object DeviceContext {
             .distinct()
             .sorted()
             .joinToString("、")
+        if (approximate) {
+            return "已安装应用摘要：共 ${apps.size} 个，其中用户应用 ${userApps.size} 个、系统应用 ${systemApps.size} 个。"
+        }
         return buildString {
             append("已安装应用：共 ").append(apps.size).append(" 个")
             append("（用户应用 ").append(userApps.size).append(" 个，系统应用 ")
@@ -252,7 +322,7 @@ internal object DeviceContext {
         }
     }
 
-    private fun contacts(context: Context): String? {
+    private fun contacts(context: Context, approximate: Boolean): String? {
         if (!has(context, Manifest.permission.READ_CONTACTS)) {
             return "联系人：助手开关已开，但系统还没有授予联系人读取权限。"
         }
@@ -267,16 +337,20 @@ internal object DeviceContext {
             null,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC",
         )?.use { cursor ->
-            while (cursor.moveToNext() && rows.size < 40) {
+            while (cursor.moveToNext()) {
                 val name = cursor.getString(0).orEmpty().ifBlank { "未命名" }
                 val number = cursor.getString(1).orEmpty()
                 if (number.isNotBlank()) rows += name + " " + number
             }
         }
-        return if (rows.isEmpty()) "联系人：没有读到联系人。" else "联系人：\n" + rows.joinToString("\n") { "- $it" }
+        return when {
+            rows.isEmpty() -> "联系人：没有读到联系人。"
+            approximate -> "联系人摘要：共读到 ${rows.size} 个联系人，大致权限开启时不返回姓名和号码。"
+            else -> "联系人：\n" + rows.joinToString("\n") { "- $it" }
+        }
     }
 
-    private fun sms(context: Context): String? {
+    private fun sms(context: Context, approximate: Boolean): String? {
         if (!has(context, Manifest.permission.READ_SMS)) {
             return "短信：助手开关已开，但系统还没有授予短信读取权限。"
         }
@@ -288,17 +362,21 @@ internal object DeviceContext {
             null,
             Telephony.Sms.DATE + " DESC",
         )?.use { cursor ->
-            while (cursor.moveToNext() && rows.size < 8) {
+            while (cursor.moveToNext()) {
                 val address = cursor.getString(0).orEmpty().ifBlank { "未知号码" }
-                val body = cursor.getString(1).orEmpty().replace('\n', ' ').take(160)
+                val body = cursor.getString(1).orEmpty().replace('\n', ' ')
                 val at = cursor.getLong(2)
-                rows += "- " + timeFormat.format(Date(at)) + " " + address + "：" + body
+                rows += "- " + formatDeviceTime(at) + " " + address + "：" + body
             }
         }
-        return if (rows.isEmpty()) "短信：没有读到短信。" else "最近短信：\n" + rows.joinToString("\n")
+        return when {
+            rows.isEmpty() -> "短信：没有读到短信。"
+            approximate -> "短信摘要：最近读到 ${rows.size} 条短信，大致权限开启时不返回号码和正文。"
+            else -> "最近短信：\n" + rows.joinToString("\n")
+        }
     }
 
-    private fun mms(context: Context): String? {
+    private fun mms(context: Context, approximate: Boolean): String? {
         if (!has(context, Manifest.permission.READ_SMS)) {
             return "彩信：助手开关已开，但系统还没有授予短信读取权限。"
         }
@@ -310,20 +388,24 @@ internal object DeviceContext {
             null,
             "date DESC",
         )?.use { cursor ->
-            while (cursor.moveToNext() && rows.size < 5) {
+            while (cursor.moveToNext()) {
                 val date = cursor.getLong(1)
                 val subject = cursor.getString(2).orEmpty().ifBlank { "（无主题）" }
-                rows += "- " + timeFormat.format(Date(date * 1000)) + " " + subject
+                rows += "- " + formatDeviceTime(date * 1000) + " " + subject
             }
         }
-        return if (rows.isEmpty()) "彩信：没有读到彩信。" else "最近彩信：\n" + rows.joinToString("\n")
+        return when {
+            rows.isEmpty() -> "彩信：没有读到彩信。"
+            approximate -> "彩信摘要：最近读到 ${rows.size} 条彩信，大致权限开启时不返回主题。"
+            else -> "最近彩信：\n" + rows.joinToString("\n")
+        }
     }
 
     /**
      * 今日步数：TYPE_STEP_COUNTER 给的是“开机以来”，这里按自然日存一个基线，
      * 每次跨日时把当天的第一次读数当基线。读不到传感器就如实说明。
      */
-    private fun stepCount(context: Context): String? {
+    private fun stepCount(context: Context, approximate: Boolean): String? {
         if (!has(context, Manifest.permission.ACTIVITY_RECOGNITION) && Build.VERSION.SDK_INT >= 29) {
             return "步数：助手开关已开，但系统还没有授予「身体活动」权限。"
         }
@@ -363,7 +445,12 @@ internal object DeviceContext {
             total
         }
         val todaySteps = (total - baseline).coerceAtLeast(0L)
-        return "今日步数：约 $todaySteps 步（系统计步器）。"
+        val shownSteps = if (approximate) {
+            (todaySteps / 100 * 100).coerceAtLeast(0)
+        } else {
+            todaySteps
+        }
+        return "今日步数：约 $shownSteps 步（系统计步器）。"
     }
 }
 

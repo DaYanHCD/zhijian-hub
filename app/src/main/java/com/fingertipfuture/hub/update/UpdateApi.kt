@@ -1,36 +1,17 @@
 package com.fingertipfuture.hub.update
 
+import com.fingertipfuture.hub.data.NetworkGuard
 import org.json.JSONException
 import org.json.JSONObject
-import com.fingertipfuture.hub.data.NetworkGuard
 
 /**
  * 更新清单的解析与获取。
  *
- * 服务器清单格式（update/version.json）：
- * ```json
- * {
- *   "generatedAt": "2026-10-13T12:00:00+08:00",
- *   "latest": {
- *     "versionCode": 2,
- *     "versionName": "0.2.0",
- *     "apkUrl": "https://fingertipfuture.com/hub/update/apk/hub-0.2.0.apk",
- *     "apkUrlHttps": "https://fingertipfuture.com/hub/update/apk/hub-0.2.0.apk",
- *     "apkSize": 8616798,
- *     "sha256": "…64 位小写十六进制…",
- *     "releasedAt": "2026-10-13",
- *     "changelog": ["首个版本发布"],
- *     "forceUpdate": false
- *   },
- *   "history": [ { "versionCode": 1, "versionName": "0.1.0", "releasedAt": "…", "changelog": [...] } ]
- * }
- * ```
- *
- * [history] 是更早版本（APK 已删除，所以没有下载地址和 sha256）。
+ * Beta 读取 update/version-debug.json，正式渠道读取 update/version.json。
+ * 历史条目可以没有下载地址；只有真正要安装的 latest 必须包含 HTTPS 地址和 SHA-256。
  */
 internal object UpdateApi {
 
-    /** 拉取并解析更新清单。会抛网络 / HTTP / 解析异常，由上层归类。 */
     suspend fun fetchManifest(manifestUrl: String): UpdateManifest =
         parseManifest(HttpClient.getString(manifestUrl))
 
@@ -40,10 +21,12 @@ internal object UpdateApi {
             latest = parseVersion(root.getJSONObject("latest")),
             generatedAt = root.optString("generatedAt").takeIf { it.isNotBlank() && it != "null" },
             history = parseHistory(root),
+            schemaVersion = root.optInt("schemaVersion", 0),
+            channel = root.optString("channel").trim(),
+            packageName = root.optString("packageName").trim(),
         )
     }
 
-    /** 要下载的那个版本：必须能算出下载地址，并且带 sha256 校验值。 */
     private fun parseVersion(json: JSONObject): VersionInfo {
         val apkUrl = json.optString("apkUrl")
         val apkUrlHttps = json.optString("apkUrlHttps").takeIf { it.isNotBlank() && it != "null" }
@@ -73,12 +56,6 @@ internal object UpdateApi {
         )
     }
 
-    /**
-     * 解析历史版本列表。
-     *
-     * 历史条目没有安装包，所以不能走 [parseVersion]。任何一条解析失败只跳过该条，
-     * 不能让整份清单作废 —— 否则「检查更新」会被历史数据拖垮。
-     */
     private fun parseHistory(root: JSONObject): List<VersionInfo> {
         val array = root.optJSONArray("history") ?: return emptyList()
         return (0 until array.length()).mapNotNull { index ->
@@ -99,23 +76,40 @@ internal object UpdateApi {
     }
 }
 
-/**
- * 下载地址是否可信。
- *
- * 正式渠道一律要求 HTTPS：清单是明文 JSON，允许 `http://` 就等于给中间人留了
- * 「把下载地址换成自己的包」的口子（虽然还有 sha256 兜底，但没必要开这个口）。
- * 例外只给本机 / 局域网地址 —— 那是开发调试用的模拟服务端（见技术说明）。
- */
-internal fun isAllowedDownloadUrl(url: String): Boolean {
-    // 与运行时网络入口共用一套白名单，避免更新模块和 NetworkGuard 规则漂移。
-    return runCatching { NetworkGuard.requireAllowed(url) }.isSuccess
+internal fun isAllowedDownloadUrl(url: String): Boolean =
+    runCatching { NetworkGuard.requireAllowed(url) }.isSuccess
+
+internal fun requireMatchingUpdateChannel(
+    manifest: UpdateManifest,
+    expectedChannel: String,
+    expectedPackage: String,
+    requireExplicit: Boolean,
+) {
+    val channelMismatch = manifest.channel.isNotBlank() && manifest.channel != expectedChannel
+    val packageMismatch = manifest.packageName.isNotBlank() &&
+        manifest.packageName != expectedPackage
+    if (channelMismatch || packageMismatch) {
+        throw UpdateChannelMismatchException(
+            "更新清单渠道不匹配：channel=${manifest.channel}, package=${manifest.packageName}",
+        )
+    }
+    if (
+        requireExplicit &&
+        (
+            manifest.schemaVersion != 1 ||
+                manifest.channel != expectedChannel ||
+                manifest.packageName != expectedPackage
+            )
+    ) {
+        throw UpdateChannelMismatchException("更新清单缺少有效的渠道标识")
+    }
 }
 
-/** 把异常归类成界面能识别的失败原因。 */
 internal fun Throwable.toUpdateError(): UpdateError = when (this) {
     is HttpStatusException -> UpdateError.SERVER
     is JSONException -> UpdateError.PARSE
     is VerificationException -> UpdateError.VERIFY
+    is UpdateChannelMismatchException -> UpdateError.CHANNEL
     is java.net.UnknownHostException,
     is java.net.ConnectException,
     is java.net.SocketTimeoutException,

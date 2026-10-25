@@ -56,11 +56,17 @@ data class HubAssistant(
     val thinkingDepth: Int = ThinkingDepthConfig.AUTO,
     /** 这个助手的系统提示词。 */
     val systemPrompt: String = "",
+    /** 用户在基础设定里给助手加的标签。 */
+    val tags: List<String> = emptyList(),
     /** 这个助手能用的技能（HubSkills 里的 id）。 */
     val skillIds: List<String> = emptyList(),
     // ---- 记忆设置 ----
     val memory: Boolean = false,
     val globalMemory: Boolean = false,
+    /** 允许助手在后续对话中自动沉淀候选记忆。 */
+    val autoMemory: Boolean = false,
+    /** 自动写入记忆前是否需要用户确认。 */
+    val confirmAutoMemory: Boolean = true,
     /** 参考历史聊天记录：关掉就只把当前这一条发出去（省 token）。 */
     val useHistory: Boolean = true,
     // ---- 权限与隐私（这个助手被允许用什么）----
@@ -73,6 +79,18 @@ data class HubAssistant(
     val permMms: Boolean = false,
     val permContacts: Boolean = false,
     val permActivity: Boolean = false,
+    val permCalendarWrite: Boolean = false,
+    val permClipboard: Boolean = false,
+    val permBluetooth: Boolean = false,
+    val permNotificationsRead: Boolean = false,
+    val permContactsWrite: Boolean = false,
+    val permSmsSend: Boolean = false,
+    val permBackgroundPower: Boolean = false,
+    val permWifi: Boolean = false,
+    val permOverlayScreen: Boolean = false,
+    val permMedia: Boolean = false,
+    /** 允许 AI 在思考时判断并调用事项提醒工具。 */
+    val permReminder: Boolean = true,
 )
 
 /**
@@ -90,6 +108,7 @@ object AssistantStore {
     private const val KEY_DEFAULT_PERMS = "default_permissions"
     private const val KEY_THINKING_V2 = "thinking_depth_v2"
     private const val KEY_TRANSLATION_DEFAULT = "translation_default_v1"
+    private const val KEY_REMINDER_DEFAULT = "reminder_default_allowed_v1"
 
     /** 内置的两个“正在开发”助手。 */
     private val BUILTIN_ASSISTANTS = listOf(
@@ -111,6 +130,7 @@ object AssistantStore {
     private val FALLBACK = HubAssistant(
         id = "default",
         name = "AI",
+        temperature = 1.0,
         skillIds = listOf(TRANSLATION_SKILL_ID),
     )
 
@@ -124,7 +144,9 @@ object AssistantStore {
      * 全局「权限与隐私」那一页里的开关 = **新建助手时的默认权限**（2026-10-16）。
      * 已经建好的助手各用各的（助手管理里那个页面改的是它自己）。
      */
-    var defaultPermissions: HubAssistant by mutableStateOf(HubAssistant(id = "_perm_defaults", name = "默认"))
+    var defaultPermissions: HubAssistant by mutableStateOf(
+        HubAssistant(id = "_perm_defaults", name = "默认", permReminder = true),
+    )
         private set
 
     /** 当前聊天用的助手。 */
@@ -179,7 +201,12 @@ object AssistantStore {
             ?: FALLBACK.id
         defaultPermissions = prefs.getString(KEY_DEFAULT_PERMS, null)?.let { permRaw ->
             runCatching { fromJson(JSONObject(permRaw)) }.getOrNull()
-        } ?: HubAssistant(id = "_perm_defaults", name = "默认")
+        } ?: HubAssistant(id = "_perm_defaults", name = "默认", permReminder = true)
+        if (!prefs.getBoolean(KEY_REMINDER_DEFAULT, false)) {
+            defaultPermissions = defaultPermissions.copy(permReminder = true)
+            items = items.map { it.copy(permReminder = true) }
+            prefs.edit().putBoolean(KEY_REMINDER_DEFAULT, true).apply()
+        }
         if (!prefs.getBoolean(KEY_THINKING_V2, false)) {
             items = items.map {
                 it.copy(thinkingDepth = ThinkingDepthConfig.fromLegacy(it.thinkingDepth))
@@ -229,6 +256,16 @@ object AssistantStore {
             avatarPath = "",
         )
         items = items + copy
+        AssistantReminderStore.forAssistant(source.id).forEach { reminder ->
+            val duplicated = reminder.copy(
+                id = AssistantReminderStore.newId(),
+                assistantId = copy.id,
+                lastRunAt = 0,
+                lastResult = "",
+            )
+            AssistantReminderStore.upsert(context, duplicated)
+            AssistantReminderScheduler.schedule(context, duplicated)
+        }
         persist(context)
     }
 
@@ -241,6 +278,10 @@ object AssistantStore {
         if (currentId == id) currentId = items.firstOrNull { !it.underDevelopment }?.id.orEmpty()
         // 头像文件也删掉
         runCatching { avatarFile(context, id).delete() }
+        AssistantReminderStore.forAssistant(id).forEach { reminder ->
+            AssistantReminderScheduler.cancel(context, reminder.id)
+        }
+        AssistantReminderStore.deleteAssistant(context, id)
         MemoryStore.deleteAssistant(context, id)
         persist(context)
     }
@@ -271,6 +312,26 @@ object AssistantStore {
             permMms = if ("mms" in disabled) false else value.permMms || grants.sms,
             permActivity = if ("activity" in disabled) false else value.permActivity || grants.activity,
             permScreenTime = if ("screen_time" in disabled) false else value.permScreenTime || grants.usageAccess,
+            permCalendarWrite = if ("calendar_write" in disabled) false else value.permCalendarWrite || grants.calendarWrite,
+            permBluetooth = if ("bluetooth" in disabled) false else value.permBluetooth || grants.bluetooth,
+            permNotificationsRead = if ("notifications_read" in disabled) {
+                false
+            } else {
+                value.permNotificationsRead || grants.notificationRead
+            },
+            permContactsWrite = if ("contacts_write" in disabled) false else value.permContactsWrite || grants.contactsWrite,
+            permBackgroundPower = if ("background_power" in disabled) {
+                false
+            } else {
+                value.permBackgroundPower || grants.backgroundPower
+            },
+            permWifi = if ("wifi" in disabled) false else value.permWifi || grants.wifi,
+            permOverlayScreen = if ("overlay_screen" in disabled) {
+                false
+            } else {
+                value.permOverlayScreen || grants.overlay
+            },
+            permMedia = if ("media" in disabled) false else value.permMedia || grants.media,
         )
         val nextDefault = merge(defaultPermissions)
         if (nextDefault != defaultPermissions) {
@@ -289,7 +350,7 @@ object AssistantStore {
             avatarPath = "",
             providerId = "",
             model = "",
-            temperature = null,
+            temperature = 1.0,
             maxTokens = null,
             thinkingDepth = ThinkingDepthConfig.AUTO,
             systemPrompt = "",
@@ -331,9 +392,10 @@ object AssistantStore {
     fun dynamicSystemPrompt(
         assistant: HubAssistant,
         userText: String,
+        includeTriggeredTime: Boolean = true,
     ): String {
         val parts = mutableListOf<String>()
-        if (assistant.permTime && FeatureActivation.needsTimeContext(userText)) {
+        if (includeTriggeredTime && assistant.permTime && FeatureActivation.needsTimeContext(userText)) {
             val now = SimpleDateFormat("yyyy-MM-dd HH:mm EEEE", Locale.CHINA).format(Date())
             parts += "现在是 " + now + "。"
         }
@@ -343,19 +405,29 @@ object AssistantStore {
         return parts.joinToString("\n\n")
     }
 
-    /** 实际用的对话参数：助手的温度 / 最大 token / 思考强度（没填就用全局的）。 */
+    /** 实际用的对话参数：助手温度默认 1.0；最大 token / 思考强度仍可跟随全局。 */
     fun effectiveChatSettings(
         assistant: HubAssistant,
         activeSkillIds: List<String>,
         userText: String,
+        includeGlobalSelectedSkill: Boolean = true,
+        includeTriggeredTime: Boolean = true,
     ): HubChatSettings {
         val global = ProviderStore.chatSettings
-        val allSkillIds = resolvedSkillIds(activeSkillIds, global.skillId)
+        val allSkillIds = if (includeGlobalSelectedSkill) {
+            resolvedSkillIds(activeSkillIds, global.skillId)
+        } else {
+            activeSkillIds
+        }
         return global.copy(
             systemPrompt = stableSystemPrompt(assistant, allSkillIds),
-            dynamicContext = dynamicSystemPrompt(assistant, userText),
+            dynamicContext = dynamicSystemPrompt(
+                assistant = assistant,
+                userText = userText,
+                includeTriggeredTime = includeTriggeredTime,
+            ),
             skillId = "",
-            temperature = assistant.temperature ?: global.temperature,
+            temperature = assistant.temperature ?: 1.0,
             maxTokens = assistant.maxTokens ?: global.maxTokens,
             thinkingDepth = resolvedThinkingDepth(assistant.thinkingDepth, global.thinkingDepth),
         )
@@ -382,9 +454,12 @@ object AssistantStore {
         put("maxTokens", a.maxTokens ?: JSONObject.NULL)
         put("thinkingDepth", a.thinkingDepth)
         put("systemPrompt", a.systemPrompt)
+        put("tags", JSONArray().apply { a.tags.forEach { put(it) } })
         put("skillIds", JSONArray().apply { a.skillIds.forEach { put(it) } })
         put("memory", a.memory)
         put("globalMemory", a.globalMemory)
+        put("autoMemory", a.autoMemory)
+        put("confirmAutoMemory", a.confirmAutoMemory)
         put("useHistory", a.useHistory)
         put("permTime", a.permTime)
         put("permLocation", a.permLocation)
@@ -395,6 +470,17 @@ object AssistantStore {
         put("permMms", a.permMms)
         put("permContacts", a.permContacts)
         put("permActivity", a.permActivity)
+        put("permCalendarWrite", a.permCalendarWrite)
+        put("permClipboard", a.permClipboard)
+        put("permBluetooth", a.permBluetooth)
+        put("permNotificationsRead", a.permNotificationsRead)
+        put("permContactsWrite", a.permContactsWrite)
+        put("permSmsSend", a.permSmsSend)
+        put("permBackgroundPower", a.permBackgroundPower)
+        put("permWifi", a.permWifi)
+        put("permOverlayScreen", a.permOverlayScreen)
+        put("permMedia", a.permMedia)
+        put("permReminder", a.permReminder)
     }
 
     private fun fromJson(json: JSONObject): HubAssistant = HubAssistant(
@@ -408,11 +494,16 @@ object AssistantStore {
         maxTokens = json.opt("maxTokens")?.let { (it as? Number)?.toInt() },
         thinkingDepth = json.optInt("thinkingDepth", ThinkingDepthConfig.AUTO),
         systemPrompt = json.optString("systemPrompt"),
+        tags = json.optJSONArray("tags")?.let { array ->
+            (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+        }.orEmpty(),
         skillIds = json.optJSONArray("skillIds")?.let { array ->
             (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
         }.orEmpty(),
         memory = json.optBoolean("memory", false),
         globalMemory = json.optBoolean("globalMemory", false),
+        autoMemory = json.optBoolean("autoMemory", false),
+        confirmAutoMemory = json.optBoolean("confirmAutoMemory", true),
         useHistory = json.optBoolean("useHistory", true),
         permTime = json.optBoolean("permTime", false),
         permLocation = json.optBoolean("permLocation", false),
@@ -423,6 +514,17 @@ object AssistantStore {
         permMms = json.optBoolean("permMms", false),
         permContacts = json.optBoolean("permContacts", false),
         permActivity = json.optBoolean("permActivity", false),
+        permCalendarWrite = json.optBoolean("permCalendarWrite", false),
+        permClipboard = json.optBoolean("permClipboard", false),
+        permBluetooth = json.optBoolean("permBluetooth", false),
+        permNotificationsRead = json.optBoolean("permNotificationsRead", false),
+        permContactsWrite = json.optBoolean("permContactsWrite", false),
+        permSmsSend = json.optBoolean("permSmsSend", false),
+        permBackgroundPower = json.optBoolean("permBackgroundPower", false),
+        permWifi = json.optBoolean("permWifi", false),
+        permOverlayScreen = json.optBoolean("permOverlayScreen", false),
+        permMedia = json.optBoolean("permMedia", false),
+        permReminder = json.optBoolean("permReminder", true),
     )
 }
 
@@ -437,4 +539,13 @@ internal data class SystemPermissionGrants(
     val notifications: Boolean,
     val camera: Boolean,
     val microphone: Boolean,
+    val exactAlarm: Boolean,
+    val calendarWrite: Boolean,
+    val bluetooth: Boolean,
+    val notificationRead: Boolean,
+    val contactsWrite: Boolean,
+    val backgroundPower: Boolean,
+    val wifi: Boolean,
+    val overlay: Boolean,
+    val media: Boolean,
 )

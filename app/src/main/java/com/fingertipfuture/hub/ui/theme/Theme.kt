@@ -110,6 +110,10 @@ fun HubTheme(
     // 聊天页那套"定值"外观（胶囊底色 / 墨色 / 输入框 / 发送键）也要跟着深浅走：
     // 深色下仍旧用浅蓝胶囊 + 深墨色 = 看不见，见 ui/component/CapsuleStyle.kt 的 HubChrome。
     CompositionLocalProvider(LocalHubChrome provides if (darkTheme) DarkHubChrome else LightHubChrome) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(
+            colorScheme = scheme,
+            typography = HubTypography,
+            content = content,
+        )
     }
 }

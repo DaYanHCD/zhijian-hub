@@ -10,19 +10,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.ui.component.HubAlertDialog as AlertDialog
+import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import com.fingertipfuture.hub.update.ApkInstaller
 import com.fingertipfuture.hub.update.UpdateController
 import com.fingertipfuture.hub.update.UpdateError
@@ -30,14 +27,8 @@ import com.fingertipfuture.hub.update.UpdateState
 import com.fingertipfuture.hub.update.VersionInfo
 import com.fingertipfuture.hub.util.formatBytes
 import com.fingertipfuture.hub.util.progressPercent
-import com.fingertipfuture.hub.ui.component.hubDialogCard
 
-/**
- * 所有「检查更新」相关弹窗的统一入口。
- *
- * 界面层只负责调 [UpdateController]；具体展示哪种弹窗由它的 [UpdateController.state] 决定。
- * 安装动作也在这一层完成（[ApkInstaller] 要 Context），控制器只负责把包准备好。
- */
+/** 全局更新弹窗：检查、新版本、下载、安装和错误反馈。 */
 @Composable
 fun UpdateDialogHost() {
     val context = LocalContext.current
@@ -45,21 +36,16 @@ fun UpdateDialogHost() {
         UpdateState.Hidden -> Unit
 
         UpdateState.Checking -> MessageDialog(
-            title = stringResource(R.string.dialog_checking),
-            // 允许返回键 / 点外面关掉并**取消这次请求**：清单拉取带重试，最长可能要一分多钟，
-            // 原来这里 onDismiss = {} 会把用户锁在弹窗里。
-            onDismiss = { UpdateController.dismiss() },
-            showButtons = false,
+            title = "正在检查更新…",
+            confirmText = "关闭",
+            onConfirm = { UpdateController.dismiss() },
         )
 
         is UpdateState.UpToDate -> MessageDialog(
-            title = stringResource(R.string.dialog_up_to_date_title),
-            message = stringResource(R.string.dialog_up_to_date_message, state.currentVersionName),
-            confirmText = stringResource(R.string.action_close),
-            // ⚠️ 这个弹窗只有一个「关闭」，它走的是 confirmButton —— 必须把 onConfirm 也接上，
-            // 否则按钮是个死的（之前就是这样：点了没任何反应）。
+            title = "已是最新版本",
+            message = "当前版本 ${state.currentVersionName}，服务器上没有更新的版本。",
+            confirmText = "关闭",
             onConfirm = { UpdateController.dismiss() },
-            onDismiss = { UpdateController.dismiss() },
         )
 
         is UpdateState.Available -> AvailableDialog(
@@ -69,57 +55,49 @@ fun UpdateDialogHost() {
         )
 
         is UpdateState.Downloading -> DownloadingDialog(
-            info = state.info,
             downloaded = state.downloaded,
             total = state.total,
             onCancel = { UpdateController.dismiss() },
         )
 
-        is UpdateState.ReadyToInstall -> {
-            val apk = state.apk
-            MessageDialog(
-                title = stringResource(R.string.dialog_download_done_title),
-                message = apk.name,
-                confirmText = stringResource(R.string.action_install),
-                dismissText = stringResource(R.string.action_later),
-                onConfirm = {
-                    if (!ApkInstaller.canRequestInstall(context)) {
-                        // 没有「安装未知应用」权限：先引导去授权
-                        UpdateController.showInstallPermission()
+        is UpdateState.ReadyToInstall -> MessageDialog(
+            title = "下载完成",
+            message = state.apk.name,
+            confirmText = "立即安装",
+            dismissText = "以后再说",
+            onConfirm = {
+                if (!ApkInstaller.canRequestInstall(context)) {
+                    UpdateController.showInstallPermission()
+                } else {
+                    val launched = runCatching { ApkInstaller.install(context, state.apk) }.isSuccess
+                    if (launched) {
+                        UpdateController.onInstallLaunched()
                     } else {
-                        val launched = runCatching { ApkInstaller.install(context, apk) }.isSuccess
-                        if (launched) {
-                            UpdateController.onInstallLaunched()
-                        } else {
-                            // 别把异常吞掉：否则界面只是"弹窗关了"，用户一脸茫然
-                            UpdateController.installLaunchFailed()
-                        }
+                        UpdateController.installLaunchFailed()
                     }
-                },
-                onDismiss = { UpdateController.dismiss() },
-            )
-        }
+                }
+            },
+            onDismiss = { UpdateController.dismiss() },
+        )
 
         is UpdateState.Failed -> MessageDialog(
-            title = stringResource(
-                when {
-                    state.retryWith != null -> R.string.dialog_download_failed_title
-                    state.error == UpdateError.INSTALL -> R.string.dialog_install_failed_title
-                    else -> R.string.dialog_check_failed_title
-                },
-            ),
+            title = when {
+                state.retryWith != null -> "下载失败"
+                state.error == UpdateError.INSTALL -> "安装失败"
+                else -> "检查更新失败"
+            },
             message = errorText(state.error, state.httpCode),
-            confirmText = stringResource(R.string.action_retry),
-            dismissText = stringResource(R.string.action_close),
+            confirmText = "重试",
+            dismissText = "关闭",
             onConfirm = { UpdateController.retry() },
             onDismiss = { UpdateController.dismiss() },
         )
 
         UpdateState.NeedInstallPermission -> MessageDialog(
-            title = stringResource(R.string.dialog_install_permission_title),
-            message = stringResource(R.string.dialog_install_permission_message),
-            confirmText = stringResource(R.string.action_go_settings),
-            dismissText = stringResource(R.string.action_close),
+            title = "需要「安装未知应用」权限",
+            message = "系统会打开本应用的权限页，请把「允许安装未知应用」打开，然后回到这里点「立即安装」。",
+            confirmText = "去设置",
+            dismissText = "关闭",
             onConfirm = {
                 ApkInstaller.openUnknownSourcesSettings(context)
                 UpdateController.dismiss()
@@ -131,15 +109,15 @@ fun UpdateDialogHost() {
 
 @Composable
 private fun errorText(error: UpdateError, httpCode: Int?): String = when (error) {
-    UpdateError.NETWORK -> stringResource(R.string.error_network)
-    UpdateError.SERVER -> stringResource(R.string.error_server, httpCode ?: 0)
-    UpdateError.PARSE -> stringResource(R.string.error_parse)
-    UpdateError.DOWNLOAD -> stringResource(R.string.error_download)
-    UpdateError.VERIFY -> stringResource(R.string.error_verify)
-    UpdateError.INSTALL -> stringResource(R.string.error_install)
+    UpdateError.NETWORK -> "网络不通或服务器连不上，请检查网络后重试。"
+    UpdateError.SERVER -> "服务器返回错误（HTTP ${httpCode ?: 0}）。"
+    UpdateError.PARSE -> "更新清单解析失败，请稍后再试。"
+    UpdateError.CHANNEL -> "更新清单渠道不匹配，已停止更新。请检查服务器配置。"
+    UpdateError.DOWNLOAD -> "下载安装包失败，请稍后重试。"
+    UpdateError.VERIFY -> "安装包校验没通过，可能下载不完整，请重新下载。"
+    UpdateError.INSTALL -> "安装包已下载，但系统没有打开安装界面。请确认「安装未知应用」权限后重试。"
 }
 
-/** 通用消息弹窗；[showButtons] 为 false 时只有一个不可关闭的转圈提示。 */
 @Composable
 private fun MessageDialog(
     title: String,
@@ -148,29 +126,27 @@ private fun MessageDialog(
     dismissText: String? = null,
     onConfirm: () -> Unit = {},
     onDismiss: () -> Unit = {},
-    showButtons: Boolean = true,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
         title = { Text(title) },
-        text = message?.let {
-            { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        },
-        confirmButton = {
-            if (showButtons && confirmText != null) {
-                TextButton(onClick = onConfirm) { Text(confirmText) }
+        text = message?.let { value ->
+            {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         },
-        dismissButton = {
-            if (showButtons && dismissText != null) {
-                TextButton(onClick = onDismiss) { Text(dismissText) }
-            }
+        confirmButton = confirmText?.let { label ->
+            { TextButton(onClick = onConfirm) { Text(label) } }
+        },
+        dismissButton = dismissText?.let { label ->
+            { TextButton(onClick = onDismiss) { Text(label) } }
         },
     )
 }
 
-/** 「发现新版本」：版本号、大小、发布时间、更新内容。 */
 @Composable
 private fun AvailableDialog(
     info: VersionInfo,
@@ -179,8 +155,7 @@ private fun AvailableDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
-        title = { Text(stringResource(R.string.dialog_new_version_title, info.versionName)) },
+        title = { Text("发现新版本 ${info.versionName}") },
         text = {
             Column(
                 modifier = Modifier
@@ -188,43 +163,48 @@ private fun AvailableDialog(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Text(
-                    text = stringResource(
-                        R.string.dialog_new_version_size,
-                        formatBytes(info.apkSize, stringResource(R.string.unknown_size)),
-                    ),
+                    text = "安装包大小：${formatBytes(info.apkSize)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (info.releasedAt.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = stringResource(R.string.dialog_new_version_released, info.releasedAt),
+                        text = "发布时间：${info.releasedAt}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (info.changelog.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.dialog_changelog),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    info.changelog.forEach { line -> ChangeItem(line) }
-                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "更新内容",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                listOf(
+                    "更新了一些新功能~",
+                    "优化了一些旧效果~",
+                    "重构了部分旧界面~",
+                    "修复了部分已知问题~",
+                ).forEach { line -> ChangeItem(line) }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "具体更新内容请到“设置-关于-更新日志”中查看。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.action_update_now)) }
+            TextButton(onClick = onConfirm) { Text("立即更新") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_later)) }
+            TextButton(onClick = onDismiss) { Text("以后再说") }
         },
     )
 }
 
-/** 更新内容里的一条，前面带一个圆点。 */
 @Composable
 private fun ChangeItem(text: String) {
     Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp)) {
@@ -242,10 +222,8 @@ private fun ChangeItem(text: String) {
     }
 }
 
-/** 下载中：进度条 + 已下载 / 总大小。 */
 @Composable
 private fun DownloadingDialog(
-    info: VersionInfo,
     downloaded: Long,
     total: Long,
     onCancel: () -> Unit,
@@ -253,8 +231,7 @@ private fun DownloadingDialog(
     val percent = progressPercent(downloaded, total)
     AlertDialog(
         onDismissRequest = onCancel,
-        modifier = Modifier.hubDialogCard(),
-        title = { Text(stringResource(R.string.dialog_downloading_title, info.versionName)) },
+        title = { Text("正在下载更新") },
         text = {
             Column {
                 if (percent >= 0) {
@@ -263,24 +240,22 @@ private fun DownloadingDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    // 服务器没给 Content-Length 时算不出进度，展示不确定进度条
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    text = stringResource(
-                        R.string.dialog_download_progress,
-                        formatBytes(downloaded, stringResource(R.string.unknown_size)),
-                        formatBytes(total, stringResource(R.string.unknown_size)),
-                    ) + if (percent >= 0) "  ($percent%)" else "",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = formatBytes(downloaded) + if (total > 0) {
+                        " / " + formatBytes(total)
+                    } else {
+                        ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Start),
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = onCancel) { Text("取消") }
         },
     )
 }

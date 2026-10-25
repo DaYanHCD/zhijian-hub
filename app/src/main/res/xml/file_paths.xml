@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  FileProvider 的路径声明。
-
-  「安装包下载到 getExternalFilesDir(DIRECTORY_DOWNLOADS) 下的 Download/ 目录」
-  —— 必须与 ApkStorage.downloadDir() 保持一致，否则拉起系统安装器时会报
-  IllegalArgumentException: Failed to find configured root。
--->
+<!-- FileProvider 向系统安装器暴露更新包，也向悬浮搜题暴露临时截图。 -->
 <paths>
     <external-files-path
         name="apk_downloads"
@@ -13,4 +7,7 @@
     <files-path
         name="apk_internal"
         path="apk_downloads/" />
+    <cache-path
+        name="floating_search"
+        path="floating_search/" />
 </paths>

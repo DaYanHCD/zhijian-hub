@@ -1,28 +1,34 @@
 package com.fingertipfuture.hub.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.fingertipfuture.hub.ui.component.HubAlertDialog as AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,10 +38,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.AttachmentStore
 import com.fingertipfuture.hub.data.NetworkGuard
 import com.fingertipfuture.hub.data.HubSkill
@@ -43,7 +51,9 @@ import com.fingertipfuture.hub.data.SkillStore
 import com.fingertipfuture.hub.ui.component.HubBottomSheet
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.hubDialogCard
+import com.fingertipfuture.hub.ui.component.settingsCardColor
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
+import com.fingertipfuture.hub.ui.provider.FloatingCircleAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,8 +63,9 @@ import java.net.URL
 /**
  * 技能管理（2026-10-16 用户定的形）：
  *
- * - 一页**技能列表**；每行右边一个「更多」，里面有**删除**（只对用户自己加的）和**查看并修改**；
- * - 右下角一颗**添加**按钮 → 选添加方式：**手动添加 / 从文件导入 / 从 GitHub 导入**；
+ * - 一页**技能列表**；点整行查看完整内容，内置技能右侧直接「复制」，
+ *   自建技能右侧「更多」里提供删除和查看并修改；
+ * - 右上角一颗**添加**按钮 → 选添加方式：**手动添加 / 从文件导入 / 从 GitHub 导入**；
  * - 三种方式最后都得到一段 skill.md（`---name/description---` + 提示词），存在 [SkillStore] 里。
  */
 @Composable
@@ -73,11 +84,14 @@ internal fun SkillManageScreen(
     fun addParsed(text: String, fallbackName: String) {
         val parsed = SkillStore.parseSkillMd(text, fallbackName)
         if (parsed == null) {
-            Toast.makeText(context, "这段内容读不出技能（要有提示词正文）", Toast.LENGTH_LONG).show()
+            context.showLocalizedToast(
+                "这段内容读不出技能（要有提示词正文）",
+                Toast.LENGTH_LONG,
+            )
             return
         }
         SkillStore.add(context, parsed.name, parsed.description, parsed.prompt)
-        Toast.makeText(context, "已添加技能「" + parsed.name + "」", Toast.LENGTH_SHORT).show()
+        context.showLocalizedToast("已添加技能「" + parsed.name + "」")
     }
 
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -85,7 +99,10 @@ internal fun SkillManageScreen(
             scope.launch {
                 val text = AttachmentStore.readText(context, uri)
                 if (text.isNullOrBlank()) {
-                    Toast.makeText(context, "这个文件读不出来（要文本类文件）", Toast.LENGTH_LONG).show()
+                    context.showLocalizedToast(
+                        "这个文件读不出来（要文本类文件）",
+                        Toast.LENGTH_LONG,
+                    )
                 } else {
                     val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.').orEmpty()
                     addParsed(text, name)
@@ -94,66 +111,98 @@ internal fun SkillManageScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        SettingsPage(title = "技能管理", onBack = onBack) {
-            SettingsGroup(title = "技能（" + skills.size + "）") {
-                if (skills.isEmpty()) {
-                    SettingsItem(
-                        title = "暂无技能",
-                        subtitle = "点右下角添加自己需要的能力",
-                        topDivider = false,
+    SettingsPage(
+        title = "技能管理",
+        onBack = onBack,
+        topAction = {
+            FloatingCircleAction(
+                icon = R.drawable.ic_add,
+                contentDescription = "添加技能",
+                onClick = { showAddSheet = true },
+            )
+        },
+    ) {
+        SettingsGroup(title = "技能（" + skills.size + "）") {
+            if (skills.isEmpty()) {
+                SettingsItem(
+                    title = "暂无技能",
+                    subtitle = "点右上角添加自己需要的能力",
+                    topDivider = false,
+                )
+            } else {
+                skills.forEachIndexed { index, skill ->
+                    SkillRow(
+                        skill = skill,
+                        builtIn = SkillStore.isBuiltIn(skill.id),
+                        topDivider = index != 0,
+                        onEdit = { onEditSkill(skill.id) },
+                        onDelete = { pendingDelete = skill },
                     )
-                } else {
-                    skills.forEachIndexed { index, skill ->
-                        SkillRow(
-                            skill = skill,
-                            builtIn = SkillStore.isBuiltIn(skill.id),
-                            topDivider = index != 0,
-                            onEdit = { onEditSkill(skill.id) },
-                            onDelete = { pendingDelete = skill },
-                        )
-                    }
                 }
             }
-        }
-        FloatingActionButton(
-            onClick = { showAddSheet = true },
-            containerColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = PAGE_HORIZONTAL_MARGIN, bottom = 20.dp),
-        ) {
-            MaterialSymbol(
-                resId = R.drawable.ic_add,
-                contentDescription = "添加技能",
-                size = 24.dp,
-                tint = MaterialTheme.colorScheme.onPrimary,
-            )
         }
     }
 
     if (showAddSheet) {
-        HubBottomSheet(onDismiss = { showAddSheet = false }) {
+        HubBottomSheet(
+            onDismiss = { showAddSheet = false },
+            minHeight = 360.dp,
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = PAGE_HORIZONTAL_MARGIN),
+                    .padding(horizontal = PAGE_HORIZONTAL_MARGIN)
+                    .padding(bottom = 16.dp),
             ) {
-                Text(text = "添加技能", fontSize = 20.sp, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(10.dp))
-                AddMethodRow("手动添加", "像写 skill.md 一样，粘贴或直接写") {
+                Text(
+                    text = "添加技能",
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "选择一种添加方式",
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(16.dp))
+                AddMethodRow(
+                    icon = R.drawable.ic_edit,
+                    title = "手动添加",
+                    subtitle = "像写 skill.md 一样，粘贴或直接写",
+                ) {
                     showAddSheet = false
                     showManual = true
                 }
-                AddMethodRow("从文件导入", "选一个 .md / .txt 技能文件") {
+                Spacer(Modifier.height(8.dp))
+                AddMethodRow(
+                    icon = R.drawable.ic_settings_file,
+                    title = "从文件导入",
+                    subtitle = "选一个 .md / .txt 技能文件",
+                ) {
                     showAddSheet = false
                     pickFile.launch(arrayOf("*/*"))
                 }
-                AddMethodRow("从 GitHub 导入", "填一个 raw 链接，直接拉进来") {
+                Spacer(Modifier.height(8.dp))
+                AddMethodRow(
+                    icon = R.drawable.ic_settings_download,
+                    title = "从 GitHub 导入",
+                    subtitle = "填一个 raw 链接，直接拉进来",
+                ) {
                     showAddSheet = false
                     showGithub = true
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
+                TextButton(
+                    onClick = { showAddSheet = false },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("取消")
+                }
             }
         }
     }
@@ -174,7 +223,10 @@ internal fun SkillManageScreen(
                 scope.launch {
                     val text = withContext(Dispatchers.IO) { fetchText(url) }
                     if (text.isNullOrBlank()) {
-                        Toast.makeText(context, "拉不到内容（检查链接或网络）", Toast.LENGTH_LONG).show()
+                        context.showLocalizedToast(
+                            "拉不到内容（检查链接或网络）",
+                            Toast.LENGTH_LONG,
+                        )
                     } else {
                         addParsed(text, url.substringAfterLast('/').substringBeforeLast('.'))
                     }
@@ -187,7 +239,6 @@ internal fun SkillManageScreen(
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            modifier = Modifier.hubDialogCard(),
             title = { Text("删除技能？") },
             text = { Text(target.name) },
             confirmButton = {
@@ -201,7 +252,7 @@ internal fun SkillManageScreen(
     }
 }
 
-/** 列表里的一行技能：名字 + 说明 + 更多（删除 / 查看并修改）。 */
+/** 列表里的一行技能：点整行查看；内置技能复制，自建技能保留更多菜单。 */
 @Composable
 private fun SkillRow(
     skill: HubSkill,
@@ -210,6 +261,7 @@ private fun SkillRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth()) {
         if (topDivider) {
@@ -250,27 +302,43 @@ private fun SkillRow(
                     )
                 }
             }
-            Box {
+            if (builtIn) {
                 MaterialSymbol(
-                    resId = R.drawable.ic_more_vertical,
-                    contentDescription = "更多",
+                    resId = R.drawable.ic_copy,
+                    contentDescription = "复制技能内容",
                     modifier = Modifier
-                        .clickable { menu = true }
+                        .clickable {
+                            val clipboard = context.getSystemService(ClipboardManager::class.java)
+                            clipboard?.setPrimaryClip(
+                                ClipData.newPlainText(skill.name, SkillStore.toMarkdown(skill)),
+                            )
+                            context.showLocalizedToast("已复制技能内容")
+                        }
                         .padding(6.dp),
                     size = 20.dp,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (!builtIn) {
+            } else {
+                Box {
+                    MaterialSymbol(
+                        resId = R.drawable.ic_more_vertical,
+                        contentDescription = "更多",
+                        modifier = Modifier
+                            .clickable { menu = true }
+                            .padding(6.dp),
+                        size = 20.dp,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
                             text = { Text("删除", fontSize = 15.sp) },
                             onClick = { menu = false; onDelete() },
                         )
+                        DropdownMenuItem(
+                            text = { Text("查看并修改", fontSize = 15.sp) },
+                            onClick = { menu = false; onEdit() },
+                        )
                     }
-                    DropdownMenuItem(
-                        text = { Text(if (builtIn) "查看技能" else "查看并修改", fontSize = 15.sp) },
-                        onClick = { menu = false; onEdit() },
-                    )
                 }
             }
         }
@@ -279,16 +347,57 @@ private fun SkillRow(
 
 /** 弹层里的一行添加方式。 */
 @Composable
-private fun AddMethodRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(
+private fun AddMethodRow(
+    icon: Int,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = settingsCardColor(),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .clickable(onClick = onClick),
     ) {
-        Text(text = title, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-        Spacer(Modifier.height(2.dp))
-        Text(text = subtitle, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                MaterialSymbol(
+                    resId = icon,
+                    contentDescription = null,
+                    size = 21.dp,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -304,22 +413,43 @@ private fun SkillMdDialog(
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
-        title = { Text(title) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                textStyle = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp),
+        title = {
+            Text(
+                text = title,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(text); onDismiss() }) { Text(confirmText) }
+        text = {
+            Column {
+                Text(
+                    text = "按 skill.md 格式填写技能名称、说明和提示词。",
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp),
+                )
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onDismiss) { Text("取消") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { onConfirm(text); onDismiss() }) { Text(confirmText) }
+            }
+        },
     )
 }
 
@@ -332,7 +462,6 @@ private fun GitHubImportDialog(
     var url by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
         title = { Text("从 GitHub 导入") },
         text = {
             Column {
@@ -389,11 +518,19 @@ private fun fetchText(url: String): String? = runCatching {
 @Composable
 internal fun SkillEditScreen(skillId: String, onBack: () -> Unit) {
     val context = LocalContext.current
-    val skill = SkillStore.byId(skillId) ?: return
+    val skill = SkillStore.byId(skillId)
+    if (skill == null) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
     val builtIn = SkillStore.isBuiltIn(skillId)
     var text by remember(skillId) { mutableStateOf(SkillStore.toMarkdown(skill)) }
 
-    SettingsPage(title = if (builtIn) "查看技能" else "查看并修改", onBack = onBack) {
+    SettingsPage(
+        title = if (builtIn) "查看技能" else "查看并修改",
+        scrollKey = "skill-edit|$skillId",
+        onBack = onBack,
+    ) {
         SettingsGroup(title = if (builtIn) "技能内容（内置，不能改）" else "技能内容（skill.md）") {
             OutlinedTextField(
                 value = text,
@@ -415,10 +552,13 @@ internal fun SkillEditScreen(skillId: String, onBack: () -> Unit) {
                     onClick = {
                         val parsed = SkillStore.parseSkillMd(text, skill.name)
                         if (parsed == null) {
-                            Toast.makeText(context, "内容不完整（要有提示词正文）", Toast.LENGTH_LONG).show()
+                            context.showLocalizedToast(
+                                "内容不完整（要有提示词正文）",
+                                Toast.LENGTH_LONG,
+                            )
                         } else {
                             SkillStore.update(context, parsed.copy(id = skill.id))
-                            Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                            context.showLocalizedToast("已保存")
                             onBack()
                         }
                     },

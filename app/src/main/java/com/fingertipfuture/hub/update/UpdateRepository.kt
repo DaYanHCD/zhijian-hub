@@ -1,31 +1,19 @@
 package com.fingertipfuture.hub.update
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
-/** 校验失败时抛出，交由上层归类为 [UpdateError.VERIFY]。 */
 class VerificationException(message: String) : Exception(message)
 
-/**
- * 更新数据源：读服务器清单、下载安装包、校验完整性。
- * 所有方法都是挂起函数，内部切到 IO 线程。
- */
+/** 更新数据源：读取服务器清单、下载安装包并校验完整性。 */
 class UpdateRepository(private val manifestUrl: String) {
 
-    /** 读取服务器上的更新清单。 */
     suspend fun fetchManifest(): UpdateManifest = withContext(Dispatchers.IO) {
         UpdateApi.fetchManifest(manifestUrl)
     }
 
-    /**
-     * 下载安装包并校验。
-     *
-     * 失败或中途取消时会把已写出的文件（含 `.part` 半截文件）删掉，不留垃圾。
-     *
-     * @param onProgress 进度回调，(已下载, 总大小)，总大小未知时为 -1
-     */
     suspend fun downloadApk(
         info: VersionInfo,
         destDir: File,
@@ -52,16 +40,15 @@ class UpdateRepository(private val manifestUrl: String) {
             )
 
             if (info.apkSize > 0 && dest.length() != info.apkSize) {
-                throw VerificationException("安装包大小不符（应为 ${info.apkSize} 字节，实际 ${dest.length()} 字节）")
+                throw VerificationException("安装包大小不符")
             }
             val expected = info.sha256 ?: throw VerificationException("清单缺少 sha256，无法校验")
             val actual = sha256Of(dest)
             if (!actual.equals(expected, ignoreCase = true)) {
-                throw VerificationException("安装包校验失败（期望 $expected，实际 $actual）")
+                throw VerificationException("安装包校验失败")
             }
             dest
         } catch (t: Throwable) {
-            // 无论失败还是被取消，都不要留下半截文件
             part.delete()
             dest.delete()
             throw t
@@ -82,7 +69,6 @@ class UpdateRepository(private val manifestUrl: String) {
     }
 
     companion object {
-        /** 清单里的版本名不可信，不能直接拼进文件路径。 */
         internal fun safeApkFileName(versionName: String): String {
             val safe = versionName
                 .trim()

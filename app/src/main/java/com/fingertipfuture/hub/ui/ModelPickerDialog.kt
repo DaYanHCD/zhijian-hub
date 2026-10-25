@@ -15,16 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,7 +40,7 @@ import com.fingertipfuture.hub.ui.provider.brandIcon
 /**
  * 「当前对话用哪个模型」——底部弹层（用户 2026-10-14 给的参考图定的形）。
  *
- * 拖动条 → 搜索框 → 按供应商分组 → 每个模型一张卡片（Logo + 名字 + 能力标签，当前那张高亮）。
+ * 拖动条 → 按提供商分组的模型列表（每个提供商一组，当前那张高亮）。
  *
  * 说明：参考图上还有「上下文长度 / 原生工具 / 余额」这些标签，我们**没有模型元数据来源**
  * （不联自有后端、不扒接口），编几个数字上去就是骗人，所以只放能确定的：
@@ -66,8 +61,9 @@ internal fun ModelPickerDialog(
     highlight: Pair<String, String>? = null,
 ) {
     val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
-    val providers = ProviderStore.providers.filter { it.enabled }
+    val providers = ProviderStore.providers.filter { it.enabled && it.models.isNotEmpty() }
+    val selectedProviderId = highlight?.first ?: ProviderStore.currentProviderId
+    val selectedModel = highlight?.second ?: ProviderStore.currentModel
 
     HubBottomSheet(onDismiss = onDismiss) {
         Column(
@@ -75,66 +71,36 @@ internal fun ModelPickerDialog(
                 .fillMaxWidth()
                 .padding(horizontal = PAGE_HORIZONTAL_MARGIN),
         ) {
-            TextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("输入模型名称搜索", fontSize = 15.sp) },
-                leadingIcon = {
-                    MaterialSymbol(
-                        resId = R.drawable.ic_search,
-                        contentDescription = null,
-                        size = 20.dp,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp)
+                    .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                var shown = 0
-                providers.forEach { provider ->
-                    val models = provider.models.filter {
-                        query.isBlank() || it.contains(query, ignoreCase = true)
-                    }
-                    if (models.isEmpty()) return@forEach
-                    shown += models.size
-                    Text(
-                        text = provider.name,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 6.dp),
+                providers.forEachIndexed { providerIndex, provider ->
+                    ProviderSectionHeader(
+                        provider = provider,
+                        topSpacing = providerIndex != 0,
                     )
-                    models.forEach { model ->
-                        val hlProvider = highlight?.first ?: ProviderStore.currentProviderId
-                        val selected = provider.id == hlProvider && model == (highlight?.second ?: ProviderStore.currentModel)
+                    provider.models.forEach { model ->
                         ModelCard(
-                            provider = provider,
                             model = model,
-                            selected = selected,
+                            selected = provider.id == selectedProviderId && model == selectedModel,
                             onClick = {
-                                if (onPick != null) onPick(provider.id, model) else ProviderStore.select(context, provider.id, model)
+                                if (onPick != null) {
+                                    onPick(provider.id, model)
+                                } else {
+                                    ProviderStore.select(context, provider.id, model)
+                                }
                                 onDismiss()
                             },
                         )
                     }
                 }
-                if (shown == 0) {
+                if (providers.isEmpty()) {
                     Text(
-                        text = if (providers.isEmpty()) {
+                        text = if (ProviderStore.providers.none { it.enabled }) {
                             "还没有启用的供应商 —— 先去「提供商」里开一家"
                         } else {
                             "没有匹配的模型"
@@ -150,10 +116,48 @@ internal fun ModelPickerDialog(
     }
 }
 
-/** 一个模型一张卡片：Logo + 名字 + 能确定的标签（当前用的那张底色高亮）。 */
+/** 每个提供商自己的模型段标题。 */
+@Composable
+private fun ProviderSectionHeader(
+    provider: HubProvider,
+    topSpacing: Boolean,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (topSpacing) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                modifier = Modifier.padding(top = 12.dp, bottom = 12.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 2.dp, end = 4.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ModelLogo(provider = provider, size = 30.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = provider.name,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "${provider.models.size} 个模型",
+                fontSize = 11.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** 一个模型一张卡片：名字 + 能确定的标签（当前用的那张底色高亮）。 */
 @Composable
 private fun ModelCard(
-    provider: HubProvider,
     model: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -173,11 +177,9 @@ private fun ModelCard(
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ModelLogo(provider)
-            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = model,
@@ -209,19 +211,22 @@ private fun ModelCard(
 }
 
 @Composable
-private fun ModelLogo(provider: HubProvider) {
+private fun ModelLogo(
+    provider: HubProvider,
+    size: androidx.compose.ui.unit.Dp = 42.dp,
+) {
     val icon = brandIcon(provider.logo)
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.size(42.dp),
+        modifier = Modifier.size(size),
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (icon != null) {
                 MaterialSymbol(
                     resId = icon.res,
                     contentDescription = null,
-                    size = 26.dp,
+                    size = if (size < 36.dp) 20.dp else 26.dp,
                     tint = if (icon.colored) Color.Unspecified else MaterialTheme.colorScheme.onSurface,
                 )
             } else {
@@ -229,7 +234,7 @@ private fun ModelLogo(provider: HubProvider) {
                     text = provider.name.trim().take(1).ifBlank { "?" },
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = if (size < 36.dp) 14.sp else 18.sp,
                 )
             }
         }

@@ -6,5 +6,5 @@
   见 app/build.gradle.kts 的 buildTypes 注释。2026-10-16 用户要求改名。
 -->
 <resources>
-    <string name="app_name">指尖Hub-Beta</string>
+    <string name="app_name" translatable="false">指尖Hub-Beta</string>
 </resources>

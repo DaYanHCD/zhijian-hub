@@ -1,9 +1,9 @@
 package com.fingertipfuture.hub.ui.provider
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,34 +17,42 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import com.fingertipfuture.hub.ui.component.HubAlertDialog as AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import androidx.compose.material3.TextFieldDefaults
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.fingertipfuture.hub.R
 import com.fingertipfuture.hub.data.HubProvider
 import com.fingertipfuture.hub.data.ProviderStore
@@ -54,6 +62,7 @@ import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubDropShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.ui.component.hubDialogCard
+import com.fingertipfuture.hub.ui.component.settingsCardColor
 
 /**
  * 「提供商」整页（列表）。
@@ -64,7 +73,7 @@ import com.fingertipfuture.hub.ui.component.hubDialogCard
  * - 搜索框、大标题都删了（标题并进了左边那颗胶囊）。
  *
  * 内置厂商全部列在这里（名字 / 接口地址 / 接口路径 / 官方 Logo 都预设好），
- * 卡片右边是启用开关，点卡片进配置页，⋮ 里是编辑 / 删除。
+ * 顶部可以搜索，点卡片进配置页，⋮ 里是编辑 / 删除；启用开关在配置页里。
  */
 @Composable
 internal fun ProvidersScreen(
@@ -74,9 +83,43 @@ internal fun ProvidersScreen(
 ) {
     val context = LocalContext.current
     var pendingDelete by remember { mutableStateOf<HubProvider?>(null) }
+    var query by remember { mutableStateOf("") }
     val providers = ProviderStore.providers
+    var displayedProviders by remember { mutableStateOf(providers) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val reorderThreshold = with(LocalDensity.current) { 76.dp.toPx() }
     val currentId = ProviderStore.currentProvider?.id
     val statusBarTop = statusBarTopPadding()
+    val filteredProviders = displayedProviders.filter { provider ->
+        query.isBlank() ||
+            provider.name.contains(query.trim(), ignoreCase = true) ||
+            provider.baseUrl.contains(query.trim(), ignoreCase = true) ||
+            provider.models.any { it.contains(query.trim(), ignoreCase = true) }
+    }
+
+    LaunchedEffect(providers) {
+        if (draggingId == null) displayedProviders = providers
+    }
+
+    fun moveDragged(direction: Int) {
+        val id = draggingId ?: return
+        val from = displayedProviders.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val to = (from + direction).coerceIn(0, displayedProviders.lastIndex)
+        if (from == to) return
+        displayedProviders = displayedProviders.toMutableList().apply {
+            val item = removeAt(from)
+            add(to, item)
+        }
+        dragOffset -= direction * reorderThreshold
+    }
+
+    fun finishDrag() {
+        ProviderStore.reorder(context, displayedProviders.map { it.id })
+        draggingId = null
+        dragOffset = 0f
+    }
 
     BackHandler(onBack = onBack)
 
@@ -96,20 +139,80 @@ internal fun ProvidersScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(providers, key = { it.id }) { provider ->
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("搜索提供商", fontSize = 15.sp) },
+                    leadingIcon = {
+                        MaterialSymbol(
+                            resId = R.drawable.ic_search,
+                            contentDescription = null,
+                            size = 21.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = settingsCardColor(),
+                        unfocusedContainerColor = settingsCardColor(),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .hubDropShadow(RoundedCornerShape(18.dp))
+                        .hubCardBorder(RoundedCornerShape(18.dp)),
+                )
+            }
+            itemsIndexed(filteredProviders, key = { _, provider -> provider.id }) { _, provider ->
+                val dragging = provider.id == draggingId
                 ProviderCard(
                     provider = provider,
                     isCurrent = provider.id == currentId,
-                    onOpen = { onOpenProvider(provider.id) },
-                    onToggle = { enabled ->
-                        // 提醒只在"云上的厂商"才有意义 —— 本机 / 局域网的服务（Ollama…）本来就不要 Key
-                        if (enabled && provider.apiKey.isBlank() && !isLocalUrl(provider.baseUrl)) {
-                            Toast.makeText(context, R.string.provider_enable_need_key, Toast.LENGTH_SHORT).show()
+                    modifier = Modifier
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (dragging) dragOffset else 0f
                         }
-                        ProviderStore.setEnabled(context, provider.id, enabled)
-                    },
+                        .then(
+                            if (query.isBlank()) {
+                                Modifier.pointerInput(provider.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggingId = provider.id
+                                            dragOffset = 0f
+                                        },
+                                        onDragCancel = { finishDrag() },
+                                        onDragEnd = { finishDrag() },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragOffset += dragAmount.y
+                                            when {
+                                                dragOffset > reorderThreshold -> moveDragged(1)
+                                                dragOffset < -reorderThreshold -> moveDragged(-1)
+                                            }
+                                        },
+                                    )
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    onOpen = { onOpenProvider(provider.id) },
                     onDelete = { pendingDelete = provider },
                 )
+            }
+            if (filteredProviders.isEmpty()) {
+                item {
+                    Text(
+                        text = "没有找到提供商",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 18.dp),
+                    )
+                }
             }
         }
 
@@ -119,6 +222,7 @@ internal fun ProvidersScreen(
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
+                .zIndex(2f)
                 .fillMaxWidth()
                 .padding(
                     start = ChatMetrics.TOP_BAR_SIDE_MARGIN,
@@ -140,7 +244,6 @@ internal fun ProvidersScreen(
     pendingDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            modifier = Modifier.hubDialogCard(),
             title = { Text(stringResource(R.string.provider_delete)) },
             text = { Text(stringResource(R.string.provider_delete_confirm)) },
             confirmButton = {
@@ -163,16 +266,21 @@ internal fun ProvidersScreen(
 private fun ProviderCard(
     provider: HubProvider,
     isCurrent: Boolean,
+    modifier: Modifier = Modifier,
     onOpen: () -> Unit,
-    onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val neutralCard = settingsCardColor()
     val container = if (provider.enabled) {
-        MaterialTheme.colorScheme.surfaceVariant
+        neutralCard
     } else {
-        MaterialTheme.colorScheme.errorContainer
+        lerp(
+            neutralCard,
+            MaterialTheme.colorScheme.errorContainer,
+            if (dark) 0.36f else 0.22f,
+        )
     }
     val shape = RoundedCornerShape(16.dp)
 
@@ -184,6 +292,9 @@ private fun ProviderCard(
         shadowElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
+            // 拖拽的 graphicsLayer 必须在 hubDropShadow 外层：
+            // hubDropShadow 会先画一块实心底再让卡片盖住，若在平移外层之外，原地会留下黑条。
+            .then(modifier)
             .hubDropShadow(shape)
             .clip(shape)
             .hubCardBorder(shape)
@@ -237,9 +348,6 @@ private fun ProviderCard(
                     }
                 }
             }
-
-            Switch(checked = provider.enabled, onCheckedChange = onToggle)
-
             Box {
                 MaterialSymbol(
                     resId = R.drawable.ic_more_vert,
@@ -323,7 +431,7 @@ internal fun Badge(text: String, color: Color) {
  * 本机 / 局域网地址：这类服务（Ollama、LM Studio…）通常连 Key 都不要，
  * 所以"还没填 Key"那句提醒就别对着它们弹。
  */
-private fun isLocalUrl(raw: String): Boolean {
+internal fun isLocalUrl(raw: String): Boolean {
     val host = raw.trim().substringAfter("://", raw).substringBefore('/').substringBefore(':').lowercase()
     return host.isEmpty() ||
         host == "localhost" ||

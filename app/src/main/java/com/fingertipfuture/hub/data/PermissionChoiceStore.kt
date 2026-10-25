@@ -27,6 +27,14 @@ internal object PermissionChoiceStore {
         "mms",
         "activity",
         "screen_time",
+        "calendar_write",
+        "bluetooth",
+        "notifications_read",
+        "contacts_write",
+        "background_power",
+        "wifi",
+        "overlay_screen",
+        "media",
     ).filter { isDisabled(context, it) }.toSet()
 
     private fun prefs(context: Context) =

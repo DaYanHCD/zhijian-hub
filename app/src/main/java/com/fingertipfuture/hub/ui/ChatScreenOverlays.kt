@@ -1,11 +1,11 @@
 package com.fingertipfuture.hub.ui
 
 import android.content.Context
-import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.ChatStore
 import com.fingertipfuture.hub.data.FolderStore
 import com.fingertipfuture.hub.data.HubConversation
@@ -44,6 +44,7 @@ internal fun ChatScreenOverlays(
     context: Context,
     state: ChatOverlayState,
     onOpenSearchHit: (com.fingertipfuture.hub.data.ChatSearchHit) -> Unit,
+    onOpenSearchSettings: () -> Unit,
     onRegenerateTitle: (HubConversation) -> Unit,
     onDeleteConversation: (HubConversation) -> Unit,
 ) {
@@ -81,7 +82,10 @@ internal fun ChatScreenOverlays(
         )
     }
     if (state.showSearchSheet) {
-        SearchQuickSheet(onDismiss = { state.showSearchSheet = false })
+        SearchQuickSheet(
+            onDismiss = { state.showSearchSheet = false },
+            onOpenSearchSettings = onOpenSearchSettings,
+        )
     }
     if (state.showChatSearch) {
         ChatSearchOverlay(
@@ -105,11 +109,9 @@ internal fun ChatScreenOverlays(
             onTogglePin = {
                 ChatStore.setPinned(conversation.id, !conversation.pinned)
                 state.conversationMenu = null
-                Toast.makeText(
-                    context,
+                context.showLocalizedToast(
                     if (conversation.pinned) "已取消置顶" else "已置顶",
-                    Toast.LENGTH_SHORT,
-                ).show()
+                )
             },
             onRename = {
                 state.conversationMenu = null
@@ -137,20 +139,18 @@ internal fun ChatScreenOverlays(
             onPick = { folderId ->
                 ChatStore.moveToFolder(conversation.id, folderId)
                 state.moveToFolderFor = null
-                Toast.makeText(
-                    context,
+                context.showLocalizedToast(
                     if (folderId == null) "已移出文件夹" else "已移动到文件夹",
-                    Toast.LENGTH_SHORT,
-                ).show()
+                )
             },
             onCreateAndPick = { name ->
                 val folder = FolderStore.create(context, name)
                 if (folder == null) {
-                    Toast.makeText(context, "文件夹名字不能为空", Toast.LENGTH_SHORT).show()
+                    context.showLocalizedToast("文件夹名字不能为空")
                 } else {
                     ChatStore.moveToFolder(conversation.id, folder.id)
                     state.moveToFolderFor = null
-                    Toast.makeText(context, "已移动到「" + folder.name + "」", Toast.LENGTH_SHORT).show()
+                    context.showLocalizedToast("已移动到「" + folder.name + "」")
                 }
             },
             onRenameFolder = { folder ->
@@ -170,7 +170,7 @@ internal fun ChatScreenOverlays(
             onConfirm = { title ->
                 ChatStore.renameConversation(conversation.id, title)
                 state.renameConversationFor = null
-                Toast.makeText(context, "已重命名", Toast.LENGTH_SHORT).show()
+                context.showLocalizedToast("已重命名")
             },
         )
     }
@@ -181,7 +181,7 @@ internal fun ChatScreenOverlays(
             onConfirm = { name ->
                 FolderStore.rename(context, folder.id, name)
                 state.renameFolderFor = null
-                Toast.makeText(context, "文件夹已重命名", Toast.LENGTH_SHORT).show()
+                context.showLocalizedToast("文件夹已重命名")
             },
         )
     }
@@ -193,7 +193,7 @@ internal fun ChatScreenOverlays(
                 FolderStore.delete(context, folder.id)
                 ChatStore.clearFolder(folder.id)
                 state.deleteFolderFor = null
-                Toast.makeText(context, "文件夹已删除", Toast.LENGTH_SHORT).show()
+                context.showLocalizedToast("文件夹已删除")
             },
         )
     }
@@ -211,7 +211,7 @@ internal fun ChatScreenOverlays(
         AssistantPickerSheet(
             onDismiss = { state.showAssistantPicker = false },
             onPicked = { name ->
-                Toast.makeText(context, "已切换到助手「" + name + "」", Toast.LENGTH_SHORT).show()
+                context.showLocalizedToast("已切换到助手「" + name + "」")
             },
         )
     }

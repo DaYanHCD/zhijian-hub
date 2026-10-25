@@ -18,7 +18,6 @@ enum class HubThemeMode(val id: String, val label: String) {
         fun fromId(raw: String?): HubThemeMode = values().firstOrNull { it.id == raw } ?: SYSTEM
     }
 }
-
 /**
  * 主题设置（2026-10-16 用户要求：设置里能切浅色 / 深色 / 跟随系统）。
  *

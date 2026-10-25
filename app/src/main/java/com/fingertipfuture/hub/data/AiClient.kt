@@ -1,5 +1,6 @@
 package com.fingertipfuture.hub.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -13,6 +14,33 @@ data class HubTurn(
     val role: String,
     val content: String,
     val attachments: List<HubAttachment> = emptyList(),
+)
+
+/** OpenAI 兼容接口的原生 function tool 定义。 */
+data class HubApiTool(
+    val name: String,
+    val description: String,
+    val parameters: JSONObject,
+)
+
+data class HubApiToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String,
+)
+
+/** 工具循环过程中的协议消息；只在一次请求内使用，不写入聊天数据库。 */
+data class HubApiMessage(
+    val role: String,
+    val content: String = "",
+    val toolCallId: String = "",
+    val toolCalls: List<HubApiToolCall> = emptyList(),
+)
+
+data class HubApiReply(
+    val content: String,
+    val reasoning: String,
+    val toolCalls: List<HubApiToolCall>,
 )
 
 /**
@@ -172,7 +200,8 @@ object AiClient {
                 val raw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 val message = runCatching {
                     val json = JSONObject(raw)
-                    json.optJSONObject("error")?.optString("message").orEmpty()
+                    json.optJSONObject("detail")?.optString("message").orEmpty()
+                        .ifBlank { json.optJSONObject("error")?.optString("message").orEmpty() }
                         .ifBlank { json.optString("message") }
                         .ifBlank { raw }
                 }.getOrDefault(raw)
@@ -228,6 +257,10 @@ object AiClient {
                 }
             }
             Result.success(accumulated)
+        } catch (cancelled: CancellationException) {
+            // Worker 被系统暂停或上层协程主动停止时必须继续向上传播。
+            // 否则会被误包装成一次执行失败，显示为“job was cancelled”。
+            throw cancelled
         } catch (t: Throwable) {
             // 被 interrupt() 掐断的读取会抛 SocketException("Socket closed") ——
             // 这是「用户点了停止」或「界面被销毁」，不是失败
@@ -236,6 +269,256 @@ object AiClient {
             request.input = null
             request.connection = null
             runCatching { connection?.disconnect() }
+        }
+    }
+
+    /**
+     * 原生工具调用的一轮模型请求。
+     *
+     * 和服务端协议一致：模型可以同时返回 reasoning、正文和 tool_calls；安卓执行工具后，
+     * 再把 assistant(tool_calls) + tool(result) 消息交回同一个循环。
+     */
+    suspend fun streamAgent(
+        provider: HubProvider,
+        model: String,
+        turns: List<HubTurn>,
+        extraMessages: List<HubApiMessage>,
+        tools: List<HubApiTool>,
+        settings: HubChatSettings = HubChatSettings(),
+        streaming: Boolean = true,
+        handle: StreamHandle? = null,
+        onDelta: suspend (String) -> Unit = {},
+        onReasoning: suspend (String) -> Unit = {},
+        onUsage: suspend (HubTokenUsage) -> Unit = {},
+    ): Result<HubApiReply> = withContext(Dispatchers.IO) {
+        val request = handle ?: newStreamHandle()
+        var connection: HttpURLConnection? = null
+        var contentAccumulated = ""
+        var reasoningAccumulated = ""
+        try {
+            require(provider.baseUrl.isNotBlank()) { "请先填写接口地址" }
+            require(model.isNotBlank()) { "请先选择模型" }
+            val base = provider.baseUrl.trim().trimEnd('/')
+            val path = provider.apiPath.trim().let { custom ->
+                when {
+                    custom.isEmpty() -> "/chat/completions"
+                    custom.startsWith("/") -> custom
+                    else -> "/$custom"
+                }
+            }
+            val endpoint = base + path
+            NetworkGuard.requireAllowed(endpoint)
+            val body = JSONObject().apply {
+                put("model", model)
+                put("messages", JSONArray().apply {
+                    buildSystemPrompt(settings, formatResponse = false)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { prompt ->
+                            put(JSONObject().apply {
+                                put("role", "system")
+                                put("content", prompt)
+                            })
+                        }
+                    budgetedTurns(turns.takeLast(40)).forEach { turn ->
+                        put(JSONObject().apply {
+                            put("role", turn.role)
+                            put("content", buildContent(turn))
+                        })
+                    }
+                    extraMessages.forEach { message ->
+                        put(JSONObject().apply {
+                            put("role", message.role)
+                            if (message.content.isNotBlank() || message.toolCalls.isEmpty()) {
+                                put("content", message.content)
+                            }
+                            if (message.toolCallId.isNotBlank()) {
+                                put("tool_call_id", message.toolCallId)
+                            }
+                            if (message.toolCalls.isNotEmpty()) {
+                                put("tool_calls", toolCallsJson(message.toolCalls))
+                            }
+                        })
+                    }
+                })
+                if (tools.isNotEmpty()) {
+                    put("tools", JSONArray().apply {
+                        tools.forEach { tool ->
+                            put(JSONObject().apply {
+                                put("type", "function")
+                                put("function", JSONObject().apply {
+                                    put("name", tool.name)
+                                    put("description", tool.description)
+                                    put("parameters", tool.parameters)
+                                })
+                            })
+                        }
+                    })
+                    put("tool_choice", "auto")
+                }
+                put("stream", streaming)
+                if (streaming && supportsStreamUsage(base)) {
+                    put("stream_options", JSONObject().apply { put("include_usage", true) })
+                }
+                settings.temperature?.let { put("temperature", it) }
+                settings.maxTokens?.let { put("max_tokens", it) }
+                when (settings.thinkingDepth) {
+                    0 -> if (!base.contains("api.openai.com", ignoreCase = true)) {
+                        put("reasoning_effort", "none")
+                    }
+                    2 -> put("reasoning_effort", "low")
+                    3 -> put("reasoning_effort", "medium")
+                    4, 5, 6 -> put("reasoning_effort", "high")
+                }
+            }
+            connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                instanceFollowRedirects = false
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = STREAM_READ_TIMEOUT_MS
+                doOutput = true
+                if (provider.apiKey.isNotBlank()) {
+                    setRequestProperty("Authorization", "Bearer " + provider.apiKey)
+                }
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", if (streaming) "text/event-stream" else "application/json")
+            }
+            connection.outputStream.use { output ->
+                output.write(body.toString().toByteArray(Charsets.UTF_8))
+            }
+            request.connection = connection
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val raw = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                return@withContext Result.failure(IOException("HTTP $status · ${raw.take(400)}"))
+            }
+
+            if (!streaming) {
+                val raw = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val json = JSONObject(raw)
+                usageOf(json)?.let { onUsage(it) }
+                val message = json.optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                val reasoning = message.str("reasoning_content")
+                    .ifBlank { message.str("reasoning") }
+                if (reasoning.isNotBlank()) onReasoning(reasoning)
+                val content = message.str("content")
+                if (content.isNotBlank()) onDelta(content)
+                return@withContext Result.success(
+                    HubApiReply(
+                        content = content,
+                        reasoning = reasoning,
+                        toolCalls = parseToolCalls(message?.optJSONArray("tool_calls")),
+                    ),
+                )
+            }
+
+            val toolCalls = linkedMapOf<Int, MutableToolCall>()
+            val stream = connection.inputStream
+            request.input = stream
+            stream.bufferedReader(Charsets.UTF_8).use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (request.cancelled) break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload.isEmpty()) continue
+                    if (payload == "[DONE]") break
+                    val json = runCatching { JSONObject(payload) }.getOrNull() ?: continue
+                    usageOf(json)?.let { onUsage(it) }
+                    val delta = json.optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("delta")
+                    val reasoning = delta.str("reasoning_content")
+                        .ifBlank { delta.str("reasoning") }
+                    if (reasoning.isNotEmpty()) {
+                        reasoningAccumulated += reasoning
+                        onReasoning(reasoningAccumulated)
+                    }
+                    val content = delta.str("content")
+                    if (content.isNotEmpty()) {
+                        contentAccumulated += content
+                        onDelta(contentAccumulated)
+                    }
+                    val calls = delta?.optJSONArray("tool_calls")
+                    if (calls != null) {
+                        for (index in 0 until calls.length()) {
+                            val item = calls.optJSONObject(index) ?: continue
+                            val itemIndex = item.optInt("index", index)
+                            val acc = toolCalls.getOrPut(itemIndex) { MutableToolCall() }
+                            item.optString("id").takeIf { it.isNotBlank() }?.let { acc.id = it }
+                            val function = item.optJSONObject("function")
+                            function?.optString("name").orEmpty().takeIf { it.isNotBlank() }?.let {
+                                acc.name = it
+                            }
+                            function?.optString("arguments").orEmpty().takeIf { it.isNotEmpty() }?.let {
+                                acc.arguments.append(it)
+                            }
+                        }
+                    }
+                }
+            }
+            Result.success(
+                HubApiReply(
+                    content = contentAccumulated,
+                    reasoning = reasoningAccumulated,
+                    toolCalls = toolCalls.toSortedMap().values.mapIndexed { index, call ->
+                        HubApiToolCall(
+                            id = call.id.ifBlank { "call_${System.currentTimeMillis()}_$index" },
+                            name = call.name,
+                            arguments = call.arguments.toString().ifBlank { "{}" },
+                        )
+                    }.filter { it.name.isNotBlank() },
+                ),
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            if (request.cancelled) {
+                Result.success(HubApiReply(contentAccumulated, reasoningAccumulated, emptyList()))
+            } else {
+                Result.failure(t)
+            }
+        } finally {
+            request.input = null
+            request.connection = null
+            runCatching { connection?.disconnect() }
+        }
+    }
+
+    private data class MutableToolCall(
+        var id: String = "",
+        var name: String = "",
+        val arguments: StringBuilder = StringBuilder(),
+    )
+
+    private fun toolCallsJson(calls: List<HubApiToolCall>): JSONArray = JSONArray().apply {
+        calls.forEach { call ->
+            put(JSONObject().apply {
+                put("id", call.id)
+                put("type", "function")
+                put("function", JSONObject().apply {
+                    put("name", call.name)
+                    put("arguments", call.arguments)
+                })
+            })
+        }
+    }
+
+    private fun parseToolCalls(array: JSONArray?): List<HubApiToolCall> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val function = item.optJSONObject("function") ?: continue
+                add(
+                    HubApiToolCall(
+                        id = item.optString("id").ifBlank { "call_$index" },
+                        name = function.optString("name"),
+                        arguments = function.optString("arguments").ifBlank { "{}" },
+                    ),
+                )
+            }
         }
     }
 
@@ -326,7 +609,9 @@ object AiClient {
 3. 操作步骤使用有序列表，并列信息使用无序列表；代码、命令、配置和终端输出使用围栏代码块并标注语言。
 4. 引用网页资料时保留可点击的 Markdown 链接。
 5. 简单寒暄、单句事实或很短的回答保持简短，不要为了排版硬加标题、表格或总结。
-6. 如果用户或已启用技能明确要求了输出形式（例如纯译文、只返回代码、JSON），以该要求为准，不要额外添加标题或解释。
+6. emoji 与紧随其后的文字之间不要插入空格。
+7. 数学内容一律使用 LaTeX：行内公式用 \( ... \)，独立公式用 \[ ... \]；分式、根号、上下标不要用裸文本或普通括号代替。
+8. 如果用户或已启用技能明确要求了输出形式（例如纯译文、只返回代码、JSON），以该要求为准，不要额外添加标题或解释。
 """.trimIndent()
 
     /**
@@ -399,17 +684,22 @@ object AiClient {
                 }
                 val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val json = JSONObject(raw)
-                val array = json.optJSONArray("data") ?: json.optJSONArray("models") ?: JSONArray()
+                val array = json.optJSONArray("data")
+                    ?: json.optJSONObject("data")?.optJSONArray("models")
+                    ?: json.optJSONArray("models")
+                    ?: JSONArray()
                 val ids = (0 until array.length())
                     .mapNotNull { index ->
+                        array.optString(index).takeIf { it.isNotBlank() }?.let { return@mapNotNull it }
                         val item = array.optJSONObject(index)
                         item?.optString("id").orEmpty()
                             .ifBlank { item?.optString("name").orEmpty() }
+                            .ifBlank { item?.optString("model").orEmpty() }
+                            .ifBlank { item?.optString("model_name").orEmpty() }
                             .takeIf { it.isNotBlank() }
                     }
                     .distinct()
-                    .sorted()
-                Result.success(ids)
+                Result.success(ids.sorted())
             } finally {
                 runCatching { conn.disconnect() }
             }
@@ -437,6 +727,7 @@ object AiClient {
             host.contains("moonshot") ||
             host.contains("api.x.ai")
     }
+
 }
 
 /**

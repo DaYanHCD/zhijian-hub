@@ -1,13 +1,12 @@
 package com.fingertipfuture.hub.update
 
 import android.content.Context
-import com.fingertipfuture.hub.core.AppConfig
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 服务端公告。服务端文件：`update/announcement.json`。 */
+/** 服务器公告数据。 */
 internal data class HubAnnouncement(
     val id: String,
     val active: Boolean,
@@ -26,31 +25,26 @@ internal data class HubAnnouncement(
     }
 }
 
+/** 从服务器读取公告。网络失败时静默跳过，不影响启动和聊天。 */
 internal object AnnouncementApi {
-    suspend fun fetch(baseUrl: String = AppConfig.UPDATE_BASE_URL): HubAnnouncement? {
-        val base = baseUrl.trimEnd('/')
-        // 加时间戳，绕开任何中间缓存；公告需要能立刻更新。
-        val raw = HttpClient.getString(
-            "$base/update/announcement.json?ts=" + System.currentTimeMillis(),
-        )
-        return parse(raw)
-    }
+    suspend fun fetch(url: String): HubAnnouncement? =
+        parseAnnouncement(HttpClient.getString(url))
+}
 
-    fun parse(raw: String): HubAnnouncement? {
-        val json = JSONObject(raw)
-        val id = json.optString("id").trim()
-        if (id.isBlank()) return null
-        return HubAnnouncement(
-            id = id,
-            active = json.optBoolean("active", false),
-            title = json.optString("title").trim(),
-            message = json.optString("message").trim(),
-            level = json.optString("level", "info").trim().ifBlank { "info" },
-            url = json.optString("url").trim(),
-            publishedAt = json.optString("publishedAt").trim(),
-            expiresAt = json.optString("expiresAt").trim(),
-        )
-    }
+internal fun parseAnnouncement(raw: String): HubAnnouncement? {
+    val json = JSONObject(raw)
+    val id = json.optString("id").trim()
+    if (id.isBlank()) return null
+    return HubAnnouncement(
+        id = id,
+        active = json.optBoolean("active", false),
+        title = json.optString("title").trim(),
+        message = json.optString("message").trim(),
+        level = json.optString("level", "info").trim().ifBlank { "info" },
+        url = json.optString("url").trim(),
+        publishedAt = json.optString("publishedAt").trim(),
+        expiresAt = json.optString("expiresAt").trim(),
+    )
 }
 
 internal object AnnouncementStore {

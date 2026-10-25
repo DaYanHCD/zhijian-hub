@@ -8,9 +8,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationManager
+import android.media.MediaScannerConnection
 import android.os.SystemClock
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.CancellationSignal
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
@@ -23,6 +25,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
@@ -42,6 +45,7 @@ object AttachmentStore {
     /** 文本类文件最多读这么多字符塞进提示词。 */
     private const val MAX_TEXT_CHARS = 20000
     private const val MAX_IMPORT_BYTES = 16L * 1024 * 1024
+    private const val MAX_ATTACHMENT_FILE_BYTES = 64L * 1024 * 1024
     private const val MAX_IMAGE_BYTES = 8L * 1024 * 1024
 
     /** 取一次当前位置的整体上限（GPS 和网络定位是**并行**跑的，谁先回来用谁）。 */
@@ -61,6 +65,11 @@ object AttachmentStore {
 
     private fun attachmentDir(context: Context): File =
         File(context.filesDir, "attachments").apply { mkdirs() }
+
+    internal fun attachmentDirectory(context: Context): File = attachmentDir(context)
+
+    internal fun voiceDirectory(context: Context): File =
+        File(context.filesDir, "voice").apply { mkdirs() }
     // ---------------- 数据管理（2026-10-16：设置 › 数据 › 数据管理） ----------------
 
     /** 附件目录里的一个文件。 */
@@ -139,11 +148,19 @@ object AttachmentStore {
 
     /** 相册选图（或拍照）：把图压好存进私有目录，返回附件。 */
     suspend fun importImage(context: Context, uri: Uri): HubAttachment? = withContext(Dispatchers.IO) {
-        runCatching {
+        var outputFile: File? = null
+        val imported = runCatching {
             val bitmap = decodeDownscaled(context, uri) ?: return@runCatching null
             val file = File(attachmentDir(context), "img_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
-            bitmap.recycle()
+            outputFile = file
+            try {
+                val written = file.outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it)
+                }
+                if (!written) throw java.io.IOException("图片压缩失败")
+            } finally {
+                bitmap.recycle()
+            }
             HubAttachment(
                 kind = HubAttachment.KIND_IMAGE,
                 path = file.absolutePath,
@@ -152,6 +169,80 @@ object AttachmentStore {
                 mime = "image/jpeg",
             )
         }.getOrNull()
+        if (imported == null) outputFile?.delete()
+        imported
+    }
+
+    /**
+     * 把聊天图片保存到系统相册。
+     *
+     * Android 10+ 通过 MediaStore 写入 `Pictures/指尖Hub`，不需要读取或写入相册权限；
+     * Android 7–9 写入公共 Pictures 目录，保存前由界面请求 WRITE_EXTERNAL_STORAGE。
+     */
+    suspend fun saveImageToGallery(
+        context: Context,
+        attachment: HubAttachment,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!attachment.isImage) throw IOException("这不是图片")
+            val source = File(attachment.path)
+            if (!source.isFile) throw IOException("图片已不在本机")
+            val extension = source.extension.lowercase().ifBlank { "jpg" }
+            val mime = attachment.mime.takeIf { it.startsWith("image/") }
+                ?: when (extension) {
+                    "png" -> "image/png"
+                    "webp" -> "image/webp"
+                    "gif" -> "image/gif"
+                    "bmp" -> "image/bmp"
+                    else -> "image/jpeg"
+                }
+            val safeBase = source.nameWithoutExtension
+                .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                .take(80)
+                .ifBlank { "hub_${System.currentTimeMillis()}" }
+            val displayName = "$safeBase.$extension"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = android.content.ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                    put(MediaStore.Images.Media.MIME_TYPE, mime)
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/指尖Hub")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IOException("系统相册没有返回可写入位置")
+                try {
+                    resolver.openOutputStream(uri)?.use { output ->
+                        source.inputStream().use { input -> input.copyTo(output) }
+                    } ?: throw IOException("无法打开系统相册")
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    "图片/指尖Hub/$displayName"
+                } catch (error: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    throw error
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val directory = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    "指尖Hub",
+                ).apply { mkdirs() }
+                val target = uniqueFile(directory, displayName)
+                source.inputStream().use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(target.absolutePath),
+                    arrayOf(mime),
+                    null,
+                )
+                "图片/指尖Hub/${target.name}"
+            }
+        }
     }
 
     /** 选文件：内容拷进私有目录。 */
@@ -170,7 +261,7 @@ object AttachmentStore {
                         total += read
                         // 先限流再落盘：以前是整份拷完才检查 64 MB，
                         // 用户选一个超大视频会先把手机存储写满。
-                        if (total > MAX_IMPORT_BYTES * 4) {
+                        if (total > MAX_ATTACHMENT_FILE_BYTES) {
                             throw java.io.IOException("文件大于 64 MB")
                         }
                         output.write(buffer, 0, read)
@@ -477,5 +568,18 @@ object AttachmentStore {
         type = mime
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    private fun uniqueFile(directory: File, fileName: String): File {
+        val first = File(directory, fileName)
+        if (!first.exists()) return first
+        val base = fileName.substringBeforeLast('.', fileName)
+        val extension = fileName.substringAfterLast('.', "").let { if (it.isBlank()) "" else ".$it" }
+        var index = 2
+        while (true) {
+            val candidate = File(directory, "$base-$index$extension")
+            if (!candidate.exists()) return candidate
+            index++
+        }
     }
 }

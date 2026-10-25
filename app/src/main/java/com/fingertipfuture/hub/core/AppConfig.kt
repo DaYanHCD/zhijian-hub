@@ -7,8 +7,11 @@ import com.fingertipfuture.hub.BuildConfig
  */
 object AppConfig {
 
-    /** 更新服务根地址，必须以 "/" 结尾（见 app/build.gradle.kts 的 buildConfigField）。 */
+    /** 自有站点根地址，版本清单和公告都位于其 update/ 目录。 */
     val UPDATE_BASE_URL: String = BuildConfig.UPDATE_BASE_URL
+    val OPEN_UPDATE_BASE_URL: String = BuildConfig.OPEN_UPDATE_BASE_URL
+    val UPDATE_CHANNEL: String = BuildConfig.UPDATE_CHANNEL
+    val APPLICATION_ID: String = BuildConfig.APPLICATION_ID
 
     /** 当前安装包的版本名，如 "0.2.0"。 */
     val CURRENT_VERSION_NAME: String = BuildConfig.VERSION_NAME
@@ -19,31 +22,33 @@ object AppConfig {
     /** 是否 debug 构建。 */
     val IS_DEBUG: Boolean = BuildConfig.DEBUG
 
-    /** GitHub 开源版：只展示内置更新日志，不连接闭源渠道的更新清单。 */
+    /** OS 版不读取闭源渠道的版本清单，避免把 Beta/正式版当成自己的更新。 */
     val OPEN_SOURCE_BUILD: Boolean = BuildConfig.OPEN_SOURCE_BUILD
 
-    /**
-     * 调试用的更新地址覆盖（**只在 debug 包里生效**）。
-     *
-     * 为什么要留这个口子：装机验证「检查更新 → 下载 → 安装」这条链路时，
-     * 不可能每次都真去发一版到服务器上。debug 包只要把
-     * `hub_update_debug` 这个 SharedPreferences 的 `update_base_url` 写成
-     * `http://10.0.2.2:8098/hub/`，就能拿本机的 mock 服务端跑完整流程
-     * （见 03_临时工作区/临时文件/mock-update-server.ps1）。
-     * 正式包不看这个键 —— 免得被人改本机偏好就把用户引到别的更新源。
-     */
+    /** debug 包验证更新流程时使用的本机服务端覆盖地址。 */
     const val DEBUG_OVERRIDE_PREFS = "hub_update_debug"
     const val DEBUG_OVERRIDE_KEY = "update_base_url"
 
-    /**
-     * 更新清单地址。
-     *
-     * 正式包读 `update/version.json`，测试包读 `update/version-debug.json`，
-     * 两套渠道的版本线互不干扰（与「指尖」同款约定）。
-     */
-    fun manifestUrl(baseUrlOverride: String? = null): String {
-        val raw = baseUrlOverride?.takeIf { it.isNotBlank() } ?: UPDATE_BASE_URL
+    fun manifestUrl(
+        baseUrlOverride: String? = null,
+        cacheBust: Long = System.currentTimeMillis(),
+    ): String {
+        val raw = baseUrlOverride?.takeIf { it.isNotBlank() }
+            ?: if (OPEN_SOURCE_BUILD) OPEN_UPDATE_BASE_URL else UPDATE_BASE_URL
         val base = if (raw.endsWith("/")) raw else "$raw/"
-        return base + if (BuildConfig.TEST_BUILD) "update/version-debug.json" else "update/version.json"
+        val path = when {
+            OPEN_SOURCE_BUILD -> "update/version.json"
+            BuildConfig.TEST_BUILD -> "update/version-debug.json"
+            else -> "update/version.json"
+        }
+        val url = base + path
+        return if (OPEN_SOURCE_BUILD) "$url?t=$cacheBust" else url
     }
+
+    fun announcementUrl(cacheBust: Long = System.currentTimeMillis()): String {
+        val raw = if (OPEN_SOURCE_BUILD) OPEN_UPDATE_BASE_URL else UPDATE_BASE_URL
+        val base = if (raw.endsWith("/")) raw else "$raw/"
+        return base + "update/announcement.json?t=$cacheBust"
+    }
+
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,9 +27,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,25 +45,33 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.AiClient
 import com.fingertipfuture.hub.data.ProviderStore
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
+import com.fingertipfuture.hub.ui.component.AnimatedSegmentedTabs
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubOuterShadow
+import com.fingertipfuture.hub.ui.component.settingsCardColor
 import kotlinx.coroutines.launch
+
+private enum class ProviderEditSection { CONFIG, MODELS }
 
 /**
  * 「供应商配置」整页（不是弹窗）。
  *
  * 2026-10-13 用户要求合并 + 精简之后只剩这些：
- * 名称 / API Key / 接口地址 / 接口路径 + 「自动检测模型」+ 模型列表 + 底部「保存」。
+ * 配置分区：名称 / API Key / 接口地址 / 接口路径 / 启用开关；
+ * 模型分区：自动检测、已添加模型、手动添加、未添加的检测结果；底部统一「保存」。
  *
  * 删掉的：三个 Tab、Response API、回传历史思考过程、获取账户余额、清除 Key、删除、
- * 底部那排的"预设 / 刷新"（删除挪到列表卡片的 ⋮ 里，启用挪到列表的开关上）。
+ * 底部那排的"预设 / 刷新"（删除挪到列表卡片的 ⋮ 里，启用放在配置分区）。
  * **这里不能再改"当前对话用哪个模型"** —— 那个入口在聊天页顶栏「更多 → 供应商与模型」。
  *
  * 保存是手动的（照参考图），编辑期间改的是草稿 `draft`。
@@ -84,31 +95,48 @@ internal fun ProviderConfigScreen(
     var testing by remember { mutableStateOf(false) }
     var balanceBusy by remember { mutableStateOf(false) }
     var balanceText by remember { mutableStateOf("") }
+    var section by remember(providerId) { mutableStateOf(ProviderEditSection.CONFIG) }
+    var modelInput by remember(providerId) { mutableStateOf("") }
+    val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(section) {
+        scrollState.scrollTo(0)
+    }
 
     fun save(showToast: Boolean = true) {
         val models = draft.models.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         draft = draft.copy(models = models)
-        ProviderStore.upsert(
-            context,
-            draft.copy(
-                name = draft.name.trim().ifBlank { "未命名" },
-                baseUrl = draft.baseUrl.trim().trimEnd('/'),
-                apiKey = draft.apiKey.trim(),
-                apiPath = draft.apiPath.trim(),
-            ),
+        val saved = draft.copy(
+            name = draft.name.trim().ifBlank { "未命名" },
+            baseUrl = draft.baseUrl.trim().trimEnd('/'),
+            apiKey = draft.apiKey.trim(),
+            apiPath = draft.apiPath.trim(),
         )
+        if (!ProviderStore.upsert(context, saved)) {
+            context.showLocalizedToast(
+                "保存失败：系统安全存储不可用或本机存储异常",
+                Toast.LENGTH_LONG,
+            )
+            return
+        }
+        if (!saved.enabled && ProviderStore.currentProviderId == providerId) {
+            ProviderStore.setEnabled(context, providerId, false)
+        }
+        if (saved.enabled && saved.apiKey.isBlank() && !isLocalUrl(saved.baseUrl)) {
+            context.showLocalizedToast(R.string.provider_enable_need_key)
+        }
         // 刚接入完却还没有可用的当前模型时，顺手选上这家；新手引导卡才能真实退场。
         if (models.isNotEmpty() && ProviderStore.currentModel.isBlank()) {
             ProviderStore.select(context, providerId, models.first())
         }
-        if (showToast) Toast.makeText(context, R.string.provider_saved, Toast.LENGTH_SHORT).show()
+        if (showToast) context.showLocalizedToast(R.string.provider_saved)
     }
 
     /** 测试连接：拿一次模型清单，能拿到就算通（2026-10-16）。 */
     fun testConnection() {
         if (draft.baseUrl.isBlank()) {
-            Toast.makeText(context, R.string.provider_detect_need_url, Toast.LENGTH_SHORT).show()
+            context.showLocalizedToast(R.string.provider_detect_need_url)
             return
         }
         testing = true
@@ -116,17 +144,15 @@ internal fun ProviderConfigScreen(
             val result = AiClient.listModels(draft)
             testing = false
             result.onSuccess { found ->
-                Toast.makeText(
-                    context,
+                context.showLocalizedToast(
                     "连接成功：拿到 " + found.size + " 个模型",
                     Toast.LENGTH_LONG,
-                ).show()
+                )
             }.onFailure { error ->
-                Toast.makeText(
-                    context,
+                context.showLocalizedToast(
                     "连接失败：" + (error.message ?: "未知错误"),
                     Toast.LENGTH_LONG,
-                ).show()
+                )
             }
         }
     }
@@ -145,7 +171,7 @@ internal fun ProviderConfigScreen(
     /** 拉一次 `{baseUrl}/models`，把这家现在能用的模型全拿回来。 */
     fun detectModels() {
         if (draft.baseUrl.isBlank()) {
-            Toast.makeText(context, R.string.provider_detect_need_url, Toast.LENGTH_SHORT).show()
+            context.showLocalizedToast(R.string.provider_detect_need_url)
             return
         }
         detecting = true
@@ -154,21 +180,26 @@ internal fun ProviderConfigScreen(
             detecting = false
             result.onSuccess { found ->
                 if (found.isEmpty()) {
-                    Toast.makeText(context, R.string.provider_detect_empty, Toast.LENGTH_LONG).show()
+                    context.showLocalizedToast(
+                        R.string.provider_detect_empty,
+                        Toast.LENGTH_LONG,
+                    )
                 } else {
                     draft = draft.copy(
                         availableModels = (draft.availableModels + found).distinct(),
                         models = (draft.models + found).distinct(),
                     )
                     save(showToast = false)
-                    Toast.makeText(
-                        context,
+                    context.showLocalizedToast(
                         context.getString(R.string.provider_detect_ok, found.size),
                         Toast.LENGTH_LONG,
-                    ).show()
+                    )
                 }
             }.onFailure {
-                Toast.makeText(context, R.string.provider_detect_failed, Toast.LENGTH_LONG).show()
+                context.showLocalizedToast(
+                    R.string.provider_detect_failed,
+                    Toast.LENGTH_LONG,
+                )
             }
         }
     }
@@ -206,7 +237,7 @@ internal fun ProviderConfigScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     // 和统计页 / 设置页一样：状态栏 padding 放进滚动内容里，
                     // 滚动时输入框可以从透明状态栏下面穿过，再由 TopFadeLayer 渐隐。
                     .statusBarsPadding()
@@ -214,6 +245,12 @@ internal fun ProviderConfigScreen(
             ) {
                 // 让开上面那颗悬浮的「返回 + 名字」胶囊
                 Spacer(Modifier.height(FLOATING_BAR_SPACE))
+            ProviderEditSectionTabs(
+                selected = section,
+                onSelect = { section = it },
+            )
+            Spacer(Modifier.height(20.dp))
+            if (section == ProviderEditSection.CONFIG) {
             OutlinedTextField(
                 value = draft.name,
                 onValueChange = { draft = draft.copy(name = it) },
@@ -271,22 +308,34 @@ internal fun ProviderConfigScreen(
             )
             Spacer(Modifier.height(14.dp))
 
-            OutlinedButton(
-                onClick = { if (!detecting) detectModels() },
-                enabled = !detecting,
-                modifier = Modifier.fillMaxWidth(),
+            Surface(
+                color = settingsCardColor(),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .hubCardBorder(RoundedCornerShape(18.dp)),
             ) {
-                MaterialSymbol(resId = R.drawable.ic_refresh, contentDescription = null, size = 18.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(
-                        if (detecting) R.string.provider_detect_busy else R.string.provider_detect_models,
-                    ),
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("启用这个提供商", fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            "关闭后不会出现在聊天模型选择中",
+                            fontSize = 12.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = draft.enabled,
+                        onCheckedChange = { draft = draft.copy(enabled = it) },
+                    )
+                }
             }
 
             Spacer(Modifier.height(20.dp))
-            Spacer(Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = { if (!testing) testConnection() },
@@ -306,68 +355,29 @@ internal fun ProviderConfigScreen(
                     text = balanceText,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            } else {
+            val unaddedModels = draft.availableModels.filterNot { it in draft.models }
+            OutlinedButton(
+                onClick = { if (!detecting) detectModels() },
+                enabled = !detecting,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                MaterialSymbol(resId = R.drawable.ic_refresh, contentDescription = null, size = 18.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(
+                        if (detecting) R.string.provider_detect_busy else R.string.provider_detect_models,
+                    ),
                 )
             }
 
             Spacer(Modifier.height(20.dp))
             Text(
-                text = "可用模型（点一下加入 / 移出下面的选择模型）",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
-            if (draft.availableModels.isEmpty()) {
-                Text(
-                    text = "还没检测过 —— 点上面的「自动检测模型」",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            draft.availableModels.forEach { model ->
-                val picked = model in draft.models
-                val itemShape = RoundedCornerShape(12.dp)
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = itemShape,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .hubCardBorder(itemShape),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = model,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                        MaterialSymbol(
-                            resId = if (picked) R.drawable.ic_delete else R.drawable.ic_add,
-                            contentDescription = if (picked) "移出选择模型" else "加入选择模型",
-                            size = 20.dp,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    draft = if (picked) {
-                                        draft.copy(models = draft.models - model)
-                                    } else {
-                                        draft.copy(models = (draft.models + model).distinct())
-                                    }
-                                }
-                                .padding(6.dp),
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = stringResource(R.string.provider_models),
+                text = "已添加的模型",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
             )
@@ -384,7 +394,7 @@ internal fun ProviderConfigScreen(
             draft.models.forEach { model ->
                 val itemShape = RoundedCornerShape(12.dp)
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = settingsCardColor(),
                     shape = itemShape,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -414,6 +424,81 @@ internal fun ProviderConfigScreen(
                         )
                     }
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = modelInput,
+                    onValueChange = { modelInput = it },
+                    label = { Text("手动添加模型") },
+                    placeholder = { Text("输入模型 ID") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = {
+                        val model = modelInput.trim()
+                        if (model.isNotEmpty()) {
+                            draft = draft.copy(
+                                models = (draft.models + model).distinct(),
+                                availableModels = (draft.availableModels + model).distinct(),
+                            )
+                            modelInput = ""
+                        }
+                    },
+                    enabled = modelInput.isNotBlank(),
+                ) {
+                    Text("添加")
+                }
+            }
+
+            if (unaddedModels.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "检测到但尚未添加",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(8.dp))
+                unaddedModels.forEach { model ->
+                    val itemShape = RoundedCornerShape(12.dp)
+                    Surface(
+                        color = settingsCardColor(),
+                        shape = itemShape,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .hubCardBorder(itemShape),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = model,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            MaterialSymbol(
+                                resId = R.drawable.ic_add,
+                                contentDescription = "加入已添加模型",
+                                size = 20.dp,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        draft = draft.copy(models = (draft.models + model).distinct())
+                                    }
+                                    .padding(6.dp),
+                            )
+                        }
+                    }
+                }
+            }
             }
 
             // 底部留出悬浮「保存」的高度，别让最后一行被盖住
@@ -460,5 +545,17 @@ internal fun ProviderConfigScreen(
         }
     }
     }
+}
+
+@Composable
+private fun ProviderEditSectionTabs(
+    selected: ProviderEditSection,
+    onSelect: (ProviderEditSection) -> Unit,
+) {
+    AnimatedSegmentedTabs(
+        labels = listOf("配置", "模型"),
+        selectedIndex = ProviderEditSection.entries.indexOf(selected),
+        onSelect = { index -> onSelect(ProviderEditSection.entries[index]) },
+    )
 }
 

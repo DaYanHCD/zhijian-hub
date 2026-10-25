@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -45,6 +47,7 @@ import androidx.compose.ui.unit.dp
 internal fun HubBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    minHeight: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var shown by remember { mutableStateOf(false) }
@@ -74,8 +77,11 @@ internal fun HubBottomSheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .hubCardBorder(sheetShape)
-                .offset(y = offset),
+                .heightIn(min = minHeight)
+                // 先位移再画描边：两者必须作为同一层一起移动。
+                // 反过来会让描边短暂停在终点，看起来像弹层还没出现就先多了一层影子。
+                .offset(y = offset)
+                .hubCardBorder(sheetShape),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // 拖动条（装饰用：目前靠点遮罩/返回关）

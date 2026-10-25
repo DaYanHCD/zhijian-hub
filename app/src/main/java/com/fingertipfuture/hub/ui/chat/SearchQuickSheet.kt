@@ -1,5 +1,6 @@
 package com.fingertipfuture.hub.ui.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,14 +50,15 @@ private fun searchColored(kind: String): Boolean = kind in setOf(
  * 添加栏「搜索设置」弹层（2026-10-17 用户要求）：
  * 和「切换模型 / 思考深度 / 插件选择」一样从下面滑出来，
  * 自动联网搜索固定开启（2026-10-19 用户要求删掉总开关），这里只逐家开关供应商，
- * 最后给一个「并行搜索」总开关。
+ * 最后提供一个进入完整搜索设置页的入口。
  */
 @Composable
-internal fun SearchQuickSheet(onDismiss: () -> Unit) {
+internal fun SearchQuickSheet(
+    onDismiss: () -> Unit,
+    onOpenSearchSettings: () -> Unit,
+) {
     val context = LocalContext.current
     val items = SearchStore.items
-    val enabledItems = items.filter { it.enabled }
-    val parallelOn = enabledItems.isNotEmpty() && enabledItems.all { it.inParallel }
 
     HubBottomSheet(onDismiss = onDismiss) {
         Column(
@@ -121,33 +123,37 @@ internal fun SearchQuickSheet(onDismiss: () -> Unit) {
                 }
             }
 
-            if (items.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "并行搜索",
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "已启用的供应商一起调用",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            Spacer(Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onDismiss()
+                        onOpenSearchSettings()
                     }
-                    Spacer(Modifier.width(10.dp))
-                    Switch(
-                        checked = parallelOn,
-                        onCheckedChange = { SearchStore.setAllParallel(context, it) },
-                        enabled = enabledItems.isNotEmpty(),
-                        modifier = Modifier.graphicsLayer(scaleX = 0.92f, scaleY = 0.92f),
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "前往搜索设置",
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "管理供应商、并行搜索与搜索模式",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                MaterialSymbol(
+                    resId = R.drawable.ic_expand,
+                    contentDescription = null,
+                    modifier = Modifier.graphicsLayer(rotationZ = -90f),
+                    size = 18.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Spacer(Modifier.height(16.dp))

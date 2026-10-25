@@ -12,8 +12,9 @@ import com.fingertipfuture.hub.ui.settings.SettingsPage
  *
  * ```
  * 通用设置    偏好设置 · 助手管理 · 技能管理
- * 模型与服务  默认模型设置 · 提供商 · 搜索设置 · 语音服务 · 视频扩展 · 权限与隐私
- * 数据        数据备份 · 数据管理
+ * 进阶设置    自动化任务 · 权限与隐私
+ * 模型与服务  默认模型设置 · 提供商 · 搜索设置
+ * 数据        数据备份 · 存储与扩展
  * 关于        关于 · 致谢 · 说明书 · 赞赏 · 联系作者
  * ```
  *
@@ -24,6 +25,7 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPreference: () -> Unit,
     onOpenAssistant: () -> Unit,
+    onOpenReminders: () -> Unit,
     onOpenSkill: () -> Unit,
     onOpenModelDefaults: () -> Unit,
     onOpenProviders: () -> Unit,
@@ -48,7 +50,7 @@ internal fun SettingsScreen(
             )
             SettingsItem(
                 title = "助手管理",
-                subtitle = "默认助手、虚拟网友与管家",
+                subtitle = "默认助手与个人助手",
                 icon = R.drawable.smart_toy,
                 chevron = true,
                 onClick = onOpenAssistant,
@@ -59,6 +61,24 @@ internal fun SettingsScreen(
                 icon = R.drawable.ic_bulb,
                 chevron = true,
                 onClick = onOpenSkill,
+            )
+        }
+
+        SettingsGroup(title = "进阶设置") {
+            SettingsItem(
+                title = "自动化任务",
+                subtitle = "查看所有助手的定时任务与最近结果",
+                icon = R.drawable.ic_alarm,
+                chevron = true,
+                topDivider = false,
+                onClick = onOpenReminders,
+            )
+            SettingsItem(
+                title = "权限与隐私",
+                subtitle = "助手可用能力与系统授权",
+                icon = R.drawable.ic_settings_location,
+                chevron = true,
+                onClick = onOpenPrivacy,
             )
         }
 
@@ -85,13 +105,6 @@ internal fun SettingsScreen(
                 chevron = true,
                 onClick = onOpenSearch,
             )
-            SettingsItem(
-                title = "权限与隐私",
-                subtitle = "助手可用能力与系统授权",
-                icon = R.drawable.ic_settings_location,
-                chevron = true,
-                onClick = onOpenPrivacy,
-            )
         }
 
         SettingsGroup(title = "数据") {
@@ -104,8 +117,8 @@ internal fun SettingsScreen(
                 onClick = onOpenBackup,
             )
             SettingsItem(
-                title = "数据管理",
-                subtitle = "对话、附件与本地占用",
+                title = "存储与扩展",
+                subtitle = "软件占用、附件与可下载扩展",
                 icon = R.drawable.ic_settings_file,
                 chevron = true,
                 onClick = onOpenStorage,

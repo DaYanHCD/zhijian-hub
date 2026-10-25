@@ -37,6 +37,7 @@ import com.fingertipfuture.hub.ui.component.HubInk
 import com.fingertipfuture.hub.ui.component.HubInkSoft
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 
 /** 全屏输入页：独立文件，避免继续把胶囊、语音和全屏输入堆在 ChatInput.kt。 */
@@ -103,7 +104,7 @@ internal fun FullScreenInputOverlay(
                         color = HubInk,
                         fontSize = 17.sp,
                         lineHeight = 26.sp,
-                    ),
+                    ).enforceHubTypography(),
                     cursorBrush = SolidColor(HubInk),
                     modifier = Modifier
                         .fillMaxSize()

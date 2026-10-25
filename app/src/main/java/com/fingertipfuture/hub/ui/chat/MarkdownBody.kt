@@ -1,6 +1,5 @@
 package com.fingertipfuture.hub.ui.chat
 
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,7 +24,7 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,17 +51,20 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.UiPrefs
 import com.fingertipfuture.hub.ui.component.HubInk
 import com.fingertipfuture.hub.ui.component.HubInkSoft
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
 
 private const val LINK_TAG = "markdown-link"
 
 private val inlineToken = Regex(
-    """(\$\$[^$\n]+\$\$|\$[^$\n]+\$|\\\([^\n]*?\\\)|\\\[[^\n]*?\\\]|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)|\*[^*\n]+\*|_[^_\n]+_|https?://[^\s<>()]+)""",
+    """(\$\$[^$\n]+\$\$|\$[^$\n]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]|[A-Za-zρΔ][A-Za-z]?_\([A-Za-z0-9]+\)|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\)|\*[^*\n]+\*|_[^_\n]+_|https?://[^\s<>()]+)""",
 )
 private val inlineLink = Regex("""^\[([^\]\n]+)\]\(([^)\n]+)\)$""")
+private val bareSubscript = Regex("""^[A-Za-zρΔ][A-Za-z]?_\([A-Za-z0-9]+\)$""")
 private val trailingUrlPunctuation = charArrayOf('.', ',', ';', ':', '!', '?', '，', '。', '；', '：', '！', '？')
 
 /**
@@ -80,7 +82,9 @@ internal fun MarkdownBody(
     bodyLineHeight: androidx.compose.ui.unit.TextUnit = 24.sp,
     blockGap: androidx.compose.ui.unit.Dp = 10.dp,
 ) {
-    val blocks = remember(text) { MarkdownParser.parse(text) }
+    val blocks = remember(text) {
+        MarkdownParser.parse(removeSpacesAfterEmoji(text))
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(blockGap),
@@ -111,7 +115,7 @@ internal fun MarkdownBody(
                             fontSize = fontSize,
                             lineHeight = fontSize * 1.3f,
                             fontWeight = FontWeight.Bold,
-                        ),
+                        ).enforceHubTypography(),
                     )
                 }
 
@@ -199,7 +203,7 @@ private fun buildInlineMarkdown(
                 ) { append(value.substring(1, value.length - 1)) }
                 value.startsWith("$$") -> withStyle(
                     SpanStyle(
-                        fontFamily = FontFamily.Serif,
+                        fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Normal,
                         fontWeight = FontWeight.Medium,
                         color = mathColor,
@@ -209,7 +213,7 @@ private fun buildInlineMarkdown(
                 }
                 value.startsWith("$") -> withStyle(
                     SpanStyle(
-                        fontFamily = FontFamily.Serif,
+                        fontFamily = FontFamily.Monospace,
                         fontStyle = FontStyle.Normal,
                         fontWeight = FontWeight.Medium,
                         color = mathColor,
@@ -221,7 +225,7 @@ private fun buildInlineMarkdown(
                     val closing = if (value.startsWith("\\(")) "\\)" else "\\]"
                     withStyle(
                         SpanStyle(
-                            fontFamily = FontFamily.Serif,
+                            fontFamily = FontFamily.Monospace,
                             fontStyle = FontStyle.Normal,
                             fontWeight = FontWeight.Medium,
                             color = mathColor,
@@ -234,6 +238,16 @@ private fun buildInlineMarkdown(
                             ),
                         )
                     }
+                }
+                bareSubscript.matches(value) -> withStyle(
+                    SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontStyle = FontStyle.Normal,
+                        fontWeight = FontWeight.Medium,
+                        color = mathColor,
+                    ),
+                ) {
+                    append(MathText.format(value))
                 }
                 value.startsWith("[") -> {
                     val link = inlineLink.matchEntire(value)
@@ -387,7 +401,7 @@ private fun MarkdownCodeBlock(block: MarkdownBlock.CodeBlock) {
                         .clip(RoundedCornerShape(5.dp))
                         .clickable {
                             clipboard.setText(AnnotatedString(block.code))
-                            Toast.makeText(context, "代码已复制", Toast.LENGTH_SHORT).show()
+                            context.showLocalizedToast("代码已复制")
                         }
                         .padding(horizontal = 5.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,

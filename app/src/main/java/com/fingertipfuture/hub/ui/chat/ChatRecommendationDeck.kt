@@ -436,7 +436,6 @@ private fun RecommendationCardFace(
                     color = muted,
                     fontSize = if (compact) 9.5.sp else 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
                 )
                 Text(
                     text = card.number.toString().padStart(2, '0') + " / " +
@@ -475,7 +474,6 @@ private fun RecommendationCardFace(
                     fontSize = if (compact) 21.sp else 27.sp,
                     fontWeight = FontWeight.ExtraBold,
                     lineHeight = if (compact) 25.sp else 32.sp,
-                    letterSpacing = (-0.5).sp,
                     maxLines = 2,
                 )
                 Spacer(Modifier.height(if (compact) 8.dp else 12.dp))

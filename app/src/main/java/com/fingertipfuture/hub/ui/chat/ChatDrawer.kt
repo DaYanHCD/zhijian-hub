@@ -38,6 +38,7 @@ import com.fingertipfuture.hub.data.UiPrefs
 import com.fingertipfuture.hub.ui.component.HubCapsuleColor
 import com.fingertipfuture.hub.ui.component.HubInk
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
+import com.fingertipfuture.hub.ui.component.DRAWER_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubOuterShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.ui.component.hubSideBorder
@@ -55,7 +56,7 @@ import com.fingertipfuture.hub.ui.component.hubSideBorder
  * 会话标题                                            ← 同一日期里，标题之间 5
  * （换日期时）下一个日期文字                            ← 上一个日期最后一条标题下方 10
  * ...
- * 助手图标 ─10─ 统计图标            ...             设置图标   ← 悬浮在内容之上，离底边 10
+ * 助手图标 ─10─ 统计图标 ─10─ 悬浮搜题图标      ...      设置图标 ← 悬浮在内容之上，离底边 10
  * ```
  *
  * 另外两条：副屏**右边两个圆角 = 25**（[drawerShape]）；左边两角贴着屏幕边，不圆。
@@ -67,7 +68,7 @@ import com.fingertipfuture.hub.ui.component.hubSideBorder
  * - 用户 2026-10-16 的规格里，历史区**只有日期 + 会话标题**，没有预览行。
  * - 会话行**长按**弹操作框（置顶 / 重新生成标题 / 移到文件夹 / 删除）；
  *   文件夹在「移动到文件夹」里新建，副屏不再单列「创建文件夹」。
- * - 「助手」「统计」点了仍会说明还没做；「聊天历史」是下面那段的标题，不可点。
+ * - 「助手」= 选助手弹层，「统计」= 统计页；「聊天历史」是下面那段的标题，不可点。
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -81,6 +82,7 @@ internal fun ChatDrawerContent(
     onProfileClick: () -> Unit,
     onAssistantsClick: () -> Unit,
     onStatsClick: () -> Unit,
+    onFloatingSearchClick: () -> Unit,
     onSettingsClick: () -> Unit,
 ) {
     ModalDrawerSheet(
@@ -107,7 +109,12 @@ internal fun ChatDrawerContent(
                     .fillMaxWidth()
                     .clickable(onClick = onProfileClick)
                     // 底部的 10 就是"头像框下方 10 是分界线"那 10
-                    .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+                    .padding(
+                        start = DRAWER_HORIZONTAL_MARGIN,
+                        end = DRAWER_HORIZONTAL_MARGIN,
+                        top = 10.dp,
+                        bottom = 10.dp,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MessageAvatar(isSelf = true, size = 60.dp)
@@ -174,7 +181,11 @@ internal fun ChatDrawerContent(
                             text = "还没有对话，发一条试试",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 5.dp),
+                            modifier = Modifier.padding(
+                                start = DRAWER_HORIZONTAL_MARGIN,
+                                end = DRAWER_HORIZONTAL_MARGIN,
+                                top = 5.dp,
+                            ),
                         )
                     }
                 }
@@ -187,8 +198,8 @@ internal fun ChatDrawerContent(
                             color = MaterialTheme.colorScheme.primary,
                             // 跨日期 10（第一组不用）
                             modifier = Modifier.padding(
-                                start = 10.dp,
-                                end = 10.dp,
+                                start = DRAWER_HORIZONTAL_MARGIN,
+                                end = DRAWER_HORIZONTAL_MARGIN,
                                 top = if (dayIndex == 0) 0.dp else 10.dp,
                             ),
                         )
@@ -207,7 +218,11 @@ internal fun ChatDrawerContent(
                                     },
                                 )
                                 // 日期下 5 = 第一条标题；同一日期里标题之间也是 5
-                                .padding(start = 10.dp, end = 10.dp, top = 5.dp),
+                                .padding(
+                                    start = DRAWER_HORIZONTAL_MARGIN,
+                                    end = DRAWER_HORIZONTAL_MARGIN,
+                                    top = 5.dp,
+                                ),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -241,12 +256,18 @@ internal fun ChatDrawerContent(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    .padding(
+                        start = DRAWER_HORIZONTAL_MARGIN,
+                        end = DRAWER_HORIZONTAL_MARGIN,
+                        bottom = 10.dp,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FunctionItem(R.drawable.ic_mood, "助手", onAssistantsClick)
                 Spacer(Modifier.width(10.dp))
                 FunctionItem(R.drawable.ic_history, "统计", onStatsClick)
+                Spacer(Modifier.width(10.dp))
+                FunctionItem(R.drawable.ic_floating_search, "悬浮搜题", onFloatingSearchClick)
                 Spacer(Modifier.weight(1f))
                 FunctionItem(R.drawable.ic_settings, "设置", onSettingsClick)
             }
@@ -270,7 +291,10 @@ private fun DrawerRow(
             .fillMaxWidth()
             // 行本身不加竖直 padding —— "上一行图标下方 10"靠外面的 Spacer(10.dp) 给，别叠两层
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(start = 10.dp, end = 10.dp),
+            .padding(
+                start = DRAWER_HORIZONTAL_MARGIN,
+                end = DRAWER_HORIZONTAL_MARGIN,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MaterialSymbol(

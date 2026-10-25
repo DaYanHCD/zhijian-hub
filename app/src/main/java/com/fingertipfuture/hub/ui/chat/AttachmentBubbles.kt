@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -32,9 +33,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +55,7 @@ import com.fingertipfuture.hub.ui.component.HubInk
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import java.io.File
+import java.util.Locale
 
 /**
  * 附件气泡（图片 / 文件 / 位置）。
@@ -358,42 +364,112 @@ private fun fileTypeColor(ext: String): Color = when (ext) {
 @Composable
 private fun LocationAttachment(attachment: HubAttachment) {
     val context = LocalContext.current
+    val shape = RoundedCornerShape(20.dp)
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(CARD_CORNER),
+        color = MaterialTheme.colorScheme.surface,
+        shape = shape,
+        shadowElevation = 1.dp,
         modifier = Modifier
-            .widthIn(max = 260.dp)
-            .hubCardBorder(RoundedCornerShape(CARD_CORNER))
+            .width(300.dp)
+            .hubCardBorder(shape)
             .clickable {
                 // 交给外部地图 App 打开（不是内嵌 WebView）
                 runCatching { context.startActivity(AttachmentStore.mapIntent(attachment.lat, attachment.lon)) }
             },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MaterialSymbol(
-                resId = R.drawable.ic_location_on,
-                contentDescription = null,
-                size = 22.dp,
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.width(10.dp))
-            Column {
+            Box(
+                modifier = Modifier
+                    .width(108.dp)
+                    .height(108.dp)
+                    .clipToBounds()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.surfaceVariant,
+                            ),
+                        ),
+                    ),
+            ) {
+                LocationMapLines(
+                    modifier = Modifier.fillMaxSize(),
+                    lineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(38.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        MaterialSymbol(
+                            resId = R.drawable.ic_location_on,
+                            contentDescription = null,
+                            size = 22.dp,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(108.dp)
+                    .padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
                     text = attachment.label.ifBlank { "我的位置" },
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "%.5f, %.5f · 点一下在地图里看".format(attachment.lat, attachment.lon),
+                    text = String.format(
+                        Locale.US,
+                        "%.5f, %.5f",
+                        attachment.lat,
+                        attachment.lon,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
+                    maxLines = 2,
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LocationMapLines(
+    modifier: Modifier,
+    lineColor: Color,
+) {
+    Canvas(modifier = modifier) {
+        val step = 28.dp.toPx()
+        var x = -size.height
+        while (x < size.width + size.height) {
+            drawLine(
+                color = lineColor,
+                start = Offset(x, 0f),
+                end = Offset(x + size.height, size.height),
+                strokeWidth = 1.dp.toPx(),
+            )
+            x += step
+        }
+        drawCircle(
+            color = lineColor,
+            radius = size.minDimension * 0.36f,
+            center = center,
+            style = Stroke(width = 1.dp.toPx()),
+        )
     }
 }
 

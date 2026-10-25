@@ -72,4 +72,54 @@ class BackupRunnerTest {
             backup.deleteRecursively()
         }
     }
+
+    @Test
+    fun interruptedRestoreCanRollbackNewAndReplacedFiles() {
+        val root = Files.createTempDirectory("hub-rollback-root").toFile()
+        val staging = Files.createTempDirectory("hub-rollback-staging").toFile()
+        val backup = Files.createTempDirectory("hub-rollback-backup").toFile()
+        try {
+            File(root, "attachments").mkdirs()
+            File(root, "attachments/a.txt").writeText("old")
+            File(staging, "attachments").mkdirs()
+            File(staging, "attachments/a.txt").writeText("new")
+            File(staging, "attachments/b.txt").writeText("new-b")
+
+            val commit = BackupRunner.installStagedFiles(root, staging, backup)
+            assertEquals("new", File(root, "attachments/a.txt").readText())
+            assertEquals("new-b", File(root, "attachments/b.txt").readText())
+
+            BackupRunner.rollbackStagedFiles(commit)
+            assertEquals("old", File(root, "attachments/a.txt").readText())
+            assertNull(File(root, "attachments/b.txt").takeIf(File::exists))
+        } finally {
+            root.deleteRecursively()
+            staging.deleteRecursively()
+            backup.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun installedFilesCanBeRemappedBeforeChatImport() {
+        val root = Files.createTempDirectory("hub-remap-root").toFile()
+        val staging = Files.createTempDirectory("hub-remap-staging").toFile()
+        val backup = Files.createTempDirectory("hub-remap-backup").toFile()
+        try {
+            File(staging, "attachments").mkdirs()
+            File(staging, "attachments/photo.jpg").writeText("image")
+            val commit = BackupRunner.installStagedFiles(root, staging, backup)
+
+            val remapped = AttachmentPathPolicy.remapImported(
+                root,
+                "/old-device/files/attachments/photo.jpg",
+            )
+            assertEquals(File(root, "attachments/photo.jpg").absolutePath, remapped)
+
+            BackupRunner.finishStagedFiles(commit)
+        } finally {
+            root.deleteRecursively()
+            staging.deleteRecursively()
+            backup.deleteRecursively()
+        }
+    }
 }

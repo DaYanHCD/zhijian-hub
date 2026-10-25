@@ -1,6 +1,6 @@
 package com.fingertipfuture.hub.ui
 
-import androidx.compose.material3.AlertDialog
+import com.fingertipfuture.hub.ui.component.HubAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,7 +20,6 @@ internal fun DeleteFolderDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
         title = { Text("删除文件夹？") },
         text = { Text("「" + folder.name + "」里的会话会移回未分类，会话本身不会删除。") },
         confirmButton = {
@@ -44,7 +43,6 @@ internal fun DeleteConversationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.hubDialogCard(),
         title = { Text("删除这段对话？") },
         text = { Text("「" + conversation.title.ifBlank { "新聊天" } + "」会从本机删除，且无法恢复。") },
         confirmButton = {

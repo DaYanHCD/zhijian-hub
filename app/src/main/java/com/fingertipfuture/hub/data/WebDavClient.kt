@@ -8,6 +8,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.URI
 import java.net.URL
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLSocket
@@ -37,12 +38,15 @@ object WebDavClient {
     private fun base(settings: BackupStore.WebDav): String {
         val root = settings.url.trim().trimEnd('/')
         val path = settings.path.trim().trim('/')
-        return if (path.isEmpty()) root + "/" else root + "/" + path + "/"
+        if (path.isEmpty()) return root + "/"
+        val encodedPath = URI(null, null, "/" + path, null).rawPath
+        return root + encodedPath + "/"
     }
 
     private fun open(url: String, method: String, settings: BackupStore.WebDav): HttpURLConnection =
         run {
             NetworkGuard.requireAllowed(url)
+            requireSecureCredentials(url, settings)
             (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             instanceFollowRedirects = false
@@ -90,6 +94,7 @@ object WebDavClient {
     private fun propfind(settings: BackupStore.WebDav): List<String> {
         val rawUrl = base(settings)
         NetworkGuard.requireAllowed(rawUrl)
+        requireSecureCredentials(rawUrl, settings)
         val url = URL(rawUrl)
         val https = url.protocol.equals("https", ignoreCase = true)
         val port = if (url.port > 0) url.port else if (https) 443 else 80
@@ -99,7 +104,7 @@ object WebDavClient {
             val path = url.path.ifBlank { "/" } + if (url.query.isNullOrBlank()) "" else "?" + url.query
             val head = StringBuilder()
             head.append("PROPFIND ").append(path).append(" HTTP/1.1\r\n")
-            head.append("Host: ").append(url.host).append("\r\n")
+            head.append("Host: ").append(hostHeader(url, port)).append("\r\n")
             head.append("Depth: 1\r\n")
             head.append("Content-Type: application/xml; charset=utf-8\r\n")
             head.append("Content-Length: ").append(body.size).append("\r\n")
@@ -147,6 +152,35 @@ object WebDavClient {
             runCatching { raw.close() }
             throw t
         }
+    }
+
+    /** 带凭据时禁止发到远程明文 HTTP；仅允许回环地址访问本机服务。 */
+    private fun requireSecureCredentials(url: String, settings: BackupStore.WebDav) {
+        val hasCredentials = settings.user.isNotBlank() || settings.password.isNotBlank()
+        if (isWebDavCredentialTransportAllowed(url, hasCredentials)) return
+        throw IOException("包含用户名或密码的 WebDAV 必须使用 HTTPS")
+    }
+
+    internal fun isWebDavCredentialTransportAllowed(
+        url: String,
+        hasCredentials: Boolean,
+    ): Boolean {
+        if (!hasCredentials) return true
+        val uri = URL(url)
+        if (uri.protocol.equals("https", ignoreCase = true)) return true
+        val host = uri.host.removeSurrounding("[", "]").lowercase()
+        return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    internal fun hostHeader(url: URL, port: Int): String {
+        val host = if (url.host.contains(':') && !url.host.startsWith("[")) {
+            "[${url.host}]"
+        } else {
+            url.host
+        }
+        val defaultPort = (url.protocol.equals("https", ignoreCase = true) && port == 443) ||
+            (url.protocol.equals("http", ignoreCase = true) && port == 80)
+        return if (defaultPort) host else "$host:$port"
     }
 
     suspend fun put(

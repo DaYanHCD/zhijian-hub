@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.core.AppConfig
 import com.fingertipfuture.hub.core.AppInfo
 import com.fingertipfuture.hub.util.formatBytes
@@ -36,14 +37,14 @@ import com.fingertipfuture.hub.ui.component.MaterialSymbol
 /** 打开一个链接；打不开就提示。 */
 private fun openUrl(context: Context, url: String) {
     val ok = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }.isSuccess
-    if (!ok) Toast.makeText(context, "没有能打开它的应用", Toast.LENGTH_SHORT).show()
+    if (!ok) context.showLocalizedToast("没有能打开它的应用")
 }
 
 /** 复制到剪贴板。 */
 private fun copyToClipboard(context: Context, label: String, text: String) {
     val manager = context.getSystemService(ClipboardManager::class.java)
     manager?.setPrimaryClip(ClipData.newPlainText(label, text))
-    Toast.makeText(context, "已复制：" + text, Toast.LENGTH_SHORT).show()
+    context.showLocalizedToast("已复制：" + text)
 }
 
 /**
@@ -97,11 +98,11 @@ internal fun AboutScreen(
         SettingsGroup(title = "链接") {
             SettingsItem(
                 title = "官网",
-                subtitle = "fingertipfuture.com",
+                subtitle = "fingertipfuture.top",
                 icon = R.drawable.ic_search,
                 chevron = true,
                 topDivider = false,
-                onClick = { openUrl(context, "https://fingertipfuture.com/") },
+                onClick = { openUrl(context, "https://fingertipfuture.top/") },
             )
             SettingsItem(
                 title = "GitHub 仓库",
@@ -210,6 +211,8 @@ internal fun ContactScreen(onBack: () -> Unit) {
                 fontSize = 13.sp,
                 lineHeight = 20.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

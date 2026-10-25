@@ -55,6 +55,7 @@ import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubDropShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.ui.provider.TopFadeLayer
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -185,7 +186,7 @@ internal fun ChatSearchOverlay(
                             textStyle = TextStyle(
                                 fontSize = 16.sp,
                                 color = MaterialTheme.colorScheme.onSurface,
-                            ),
+                            ).enforceHubTypography(),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             modifier = Modifier
                                 .weight(1f)

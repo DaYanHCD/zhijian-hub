@@ -203,7 +203,7 @@ internal object FeatureActivation {
         }
 
         if (isWeatherQuery(original)) {
-            val askedPlace = weatherPlace(original)
+            val askedPlace = explicitWeatherPlace(original)
             val place = askedPlace.ifBlank { location.trim() }
             query = weatherSearchQuery(place)
             return SearchPlan(
@@ -431,7 +431,8 @@ internal object FeatureActivation {
             )
     }
 
-    private fun weatherPlace(text: String): String {
+    /** 用户是否在天气问题里明确点名了地点。返回空串表示依赖当前位置。 */
+    internal fun explicitWeatherPlace(text: String): String {
         val marker = listOf("天气", "气温", "温度")
             .map { text.indexOf(it) }
             .filter { it >= 0 }
@@ -444,7 +445,15 @@ internal object FeatureActivation {
             .replace(Regex("""^(?:今天|今日|明天|后天|现在|目前|当前|最近)\s*"""), "")
             .replace(Regex("""(?:的|当地|本地|这里|那里)\s*$"""), "")
             .trim(' ', '，', ',', '。', '？', '?')
-        if (place in setOf("", "今天", "现在", "本地", "这里", "当地", "我")) place = ""
+        if (
+            place in setOf(
+                "", "今天", "现在", "当前", "本机", "本地", "当地", "我",
+                "这里", "这儿", "这边", "我这里", "我这儿", "我这边",
+                "我的位置", "我位置", "当前位置",
+            )
+        ) {
+            place = ""
+        }
         return place.take(20)
     }
 }

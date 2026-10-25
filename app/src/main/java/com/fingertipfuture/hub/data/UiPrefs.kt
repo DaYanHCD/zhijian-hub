@@ -34,6 +34,7 @@ object UiPrefs {
     private const val KEY_HIDE_EMOJI_BUTTON = "hide_emoji_button"
     private const val KEY_TAP_MESSAGE_CLOSE_KEYBOARD = "tap_message_close_keyboard"
     private const val KEY_CARD_BORDERS = "card_borders"
+    private const val KEY_APPROXIMATE_PERMISSIONS = "approximate_permissions"
     private const val KEY_USER_NAME = "user_name"
     private const val KEY_ACTIVE_CONVERSATION = "active_conversation"
 
@@ -84,6 +85,10 @@ object UiPrefs {
     var cardBorders by mutableStateOf(true)
         private set
 
+    /** 隐私能力默认只向助手提供摘要或脱敏结果。 */
+    var approximatePermissions by mutableStateOf(true)
+        private set
+
     /** 我的昵称（副屏用户区那个，点一下能改）。 */
     var userName: String by mutableStateOf("用户")
         private set
@@ -101,6 +106,7 @@ object UiPrefs {
         hideEmojiButton = prefs.getBoolean(KEY_HIDE_EMOJI_BUTTON, false)
         tapMessageClosesKeyboard = prefs.getBoolean(KEY_TAP_MESSAGE_CLOSE_KEYBOARD, false)
         cardBorders = prefs.getBoolean(KEY_CARD_BORDERS, true)
+        approximatePermissions = prefs.getBoolean(KEY_APPROXIMATE_PERMISSIONS, true)
         userName = prefs.getString(KEY_USER_NAME, null)?.takeIf { it.isNotBlank() } ?: "用户"
     }
 
@@ -157,6 +163,11 @@ object UiPrefs {
     fun setCardBorders(context: Context, value: Boolean) {
         cardBorders = value
         prefs(context).edit().putBoolean(KEY_CARD_BORDERS, value).apply()
+    }
+
+    fun setApproximatePermissions(context: Context, value: Boolean) {
+        approximatePermissions = value
+        prefs(context).edit().putBoolean(KEY_APPROXIMATE_PERMISSIONS, value).apply()
     }
 
     fun setUserName(context: Context, value: String) {

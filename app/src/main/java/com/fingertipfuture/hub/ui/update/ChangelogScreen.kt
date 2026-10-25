@@ -1,7 +1,6 @@
 package com.fingertipfuture.hub.ui.update
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,13 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,9 +31,7 @@ import com.fingertipfuture.hub.core.AppConfig
 import com.fingertipfuture.hub.ui.component.hubDropShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.ui.settings.SettingsPage
-import com.fingertipfuture.hub.update.ChangelogState
 import com.fingertipfuture.hub.update.LocalChangelog
-import com.fingertipfuture.hub.update.UpdateController
 import com.fingertipfuture.hub.update.UpdateManifest
 import com.fingertipfuture.hub.update.VersionInfo
 
@@ -49,53 +43,18 @@ private val OnBadgeYellow = Color(0xFF1F1F1F)
  * 更新日志整页（2026-10-17 按「指尖」的样式重做）。
  *
  * 每个版本是一张独立卡片：版本号 + 红绿灯标签 + 右侧日期，下面是更新条目；
- * 「更新：」「修复：」这类分类前缀加粗。服务器失败时显示内置兜底记录。
+ * 「更新：」「修复：」这类分类前缀加粗。数据全部来自 APK 内置记录。
  */
 @Composable
 internal fun ChangelogScreen(onBack: () -> Unit) {
-    val close = {
-        UpdateController.dismissChangelog()
-        onBack()
-    }
+    val manifest = remember { LocalChangelog.manifest() }
 
-    LaunchedEffect(Unit) { UpdateController.showChangelog() }
-    DisposableEffect(Unit) {
-        onDispose { UpdateController.dismissChangelog() }
-    }
-
-    val localEntries = remember { LocalChangelog.entries() }
-
-    SettingsPage(title = stringResource(R.string.changelog_title), onBack = close) {
+    SettingsPage(title = stringResource(R.string.changelog_title), onBack = onBack) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            when (val state = UpdateController.changelog) {
-                ChangelogState.Hidden,
-                ChangelogState.Loading,
-                -> Box(
-                    modifier = Modifier.fillMaxWidth().height(360.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
-
-                is ChangelogState.Failed -> {
-                    Text(
-                        text = stringResource(R.string.changelog_local_only),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    localEntries.forEach { entry ->
-                        ChangelogCard(
-                            entry = entry,
-                            isCurrent = entry.versionCode == AppConfig.CURRENT_VERSION_CODE,
-                        )
-                    }
-                }
-
-                is ChangelogState.Loaded -> ChangelogList(state.manifest)
-            }
+            ChangelogList(manifest)
         }
     }
 }
@@ -227,27 +186,31 @@ private fun VersionBadge(
     }
 }
 
-private val CHANGELOG_KIND_PREFIXES = listOf(
-    "更新", "修复", "优化", "新增", "调整", "说明",
-    "修復", "優化", "調整", "說明",
-)
-
 private val CHANGELOG_PREFIX_REGEX = Regex(
-    "^(更新|修復|修复|優化|优化|新增|調整|调整|說明|说明)\\s*([：:])\\s*",
+    "^(更新|修復|修复|優化|优化|新增|重構|重构|升級|升级|調整|调整|說明|说明|整理|保持|驗證|验证)\\s*([：:])\\s*",
 )
 
-/** 把「修复：xxx」里的分类前缀加粗，其余保持普通正文。 */
-private fun formatChangelogLine(line: String): AnnotatedString {
-    val match = CHANGELOG_PREFIX_REGEX.find(line) ?: return AnnotatedString(line)
-    val prefix = match.groupValues[1]
-    if (prefix !in CHANGELOG_KIND_PREFIXES) return AnnotatedString(line)
-
-    val prefixText = prefix + match.groupValues[2]
+/** 更新日志对外只显示三类：更新、优化、修复；旧版前缀在展示时自动归一。 */
+internal fun normalizeChangelogLine(line: String): String {
+    val match = CHANGELOG_PREFIX_REGEX.find(line) ?: return line
+    val category = when (match.groupValues[1]) {
+        "修复", "修復" -> "修复"
+        "优化", "優化", "調整", "调整", "說明", "说明", "整理" -> "优化"
+        else -> "更新"
+    }
     val body = line.substring(match.range.last + 1)
+    return "$category：$body"
+}
+
+/** 把统一后的三类分类前缀加粗，其余保持普通正文。 */
+private fun formatChangelogLine(line: String): AnnotatedString {
+    val normalized = normalizeChangelogLine(line)
+    val match = Regex("^(更新|优化|修复)：").find(normalized)
+        ?: return AnnotatedString(normalized)
     return buildAnnotatedString {
         withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-            append(prefixText)
+            append(match.value)
         }
-        append(body)
+        append(normalized.substring(match.range.last + 1))
     }
 }

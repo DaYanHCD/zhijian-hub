@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.fingertipfuture.hub.floatingocr.permission.OCR"
+        android:protectionLevel="signature" />
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@drawable/ic_plugin"
+        android:label="指尖Hub-Beta 视觉识别组件"
+        android:supportsRtl="true">
+        <service
+            android:name=".OcrBridgeService"
+            android:exported="true"
+            android:permission="com.fingertipfuture.hub.floatingocr.permission.OCR">
+            <intent-filter>
+                <action android:name="com.fingertipfuture.hub.floatingocr.OCR" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

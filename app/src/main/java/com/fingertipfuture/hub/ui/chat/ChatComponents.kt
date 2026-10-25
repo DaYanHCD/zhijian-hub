@@ -221,9 +221,7 @@ private fun OutputBlock(
         // 以前是等 thoughtMs/reasoning 到了才插进来，晚一步出现会把下面的内容整体顶下去
         // （用户 2026-10-17：延迟出现，然后把内容挤到输入胶囊下面）。
         // 老消息没有时长、也不是流式 → 不占地方。
-        if (!UiPrefs.hideThinking &&
-            (message.thoughtMs > 0 || message.reasoning.isNotBlank() || message.streaming)
-        ) {
+        if (!UiPrefs.hideThinking && hasThinkingContent(message)) {
             Spacer(Modifier.height(ChatMetrics.BODY_BLOCK_GAP))
             ThinkBox(
                 message = message,
@@ -279,6 +277,11 @@ private fun InputBlock(
     onAction: (MessageAction, HubMessage) -> Unit,
     onImageClick: (HubAttachment) -> Unit,
 ) {
+    // 单表情最终高度必须与普通文字气泡一致：内边距相同，内容高度取正文行高。
+    // 用 sp → dp 换算，系统字体放大时也会跟普通文字气泡一起变化。
+    val normalEmojiSize = with(LocalDensity.current) {
+        ChatMetrics.BODY_TEXT_LINE.toDp()
+    }
     // 不能编辑时把「编辑」摘掉，其余照旧（这一排是右对齐，少一颗只是整体往右缩）
     val actions = if (canEdit) INPUT_ACTIONS else INPUT_ACTIONS.filterNot { it.action == MessageAction.Edit }
     Column(
@@ -337,13 +340,31 @@ private fun InputBlock(
                         Spacer(Modifier.height(8.dp))
                     }
                     if (message.text.isNotBlank() || message.streaming) {
-                        Text(
-                            text = if (message.streaming && message.text.isEmpty()) "…" else message.text,
-                            color = HubInk,
-                            fontSize = ChatMetrics.BODY_TEXT_SIZE,
-                            lineHeight = ChatMetrics.BODY_TEXT_LINE,
-                            localize = false,
-                        )
+                        val singleEmoji = if (
+                            !message.streaming &&
+                            message.attachments.isEmpty()
+                        ) {
+                            singleEmojiOrNull(message.text)
+                        } else {
+                            null
+                        }
+                        if (singleEmoji != null) {
+                            NotoEmojiGlyph(
+                                symbol = singleEmoji,
+                                size = 52.dp,
+                                normalSize = normalEmojiSize,
+                                animateOnce = message.playEmojiOnce,
+                                playbackKey = message.id,
+                            )
+                        } else {
+                            Text(
+                                text = if (message.streaming && message.text.isEmpty()) "…" else message.text,
+                                color = HubInk,
+                                fontSize = ChatMetrics.BODY_TEXT_SIZE,
+                                lineHeight = ChatMetrics.BODY_TEXT_LINE,
+                                localize = false,
+                            )
+                        }
                     }
                 }
             }

@@ -1,7 +1,9 @@
 package com.fingertipfuture.hub.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -48,11 +50,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -66,7 +70,9 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.core.content.ContextCompat
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.core.showLocalizedToast
 import com.fingertipfuture.hub.data.AttachmentStore
 import com.fingertipfuture.hub.data.AssistantStore
 import com.fingertipfuture.hub.data.ChatSearchHit
@@ -99,6 +105,9 @@ import com.fingertipfuture.hub.ui.chat.DRAWER_DRAFT_ID
 import com.fingertipfuture.hub.ui.chat.FullScreenInputOverlay
 import com.fingertipfuture.hub.ui.chat.ImagePreviewOverlay
 import com.fingertipfuture.hub.ui.chat.ChatMoreSheet
+import com.fingertipfuture.hub.ui.chat.AssistantReminderIntentDialog
+import com.fingertipfuture.hub.ui.chat.AgentDeviceActionDialog
+import com.fingertipfuture.hub.ui.chat.AutoMemoryApprovalDialog
 import com.fingertipfuture.hub.ui.chat.MessageAction
 import com.fingertipfuture.hub.ui.chat.MessageBlock
 import com.fingertipfuture.hub.ui.chat.RenameFolderDialog
@@ -107,15 +116,18 @@ import com.fingertipfuture.hub.ui.chat.PanelHeightStore
 import com.fingertipfuture.hub.ui.chat.TimeLabel
 import com.fingertipfuture.hub.ui.chat.VoiceAction
 import com.fingertipfuture.hub.ui.chat.buildChatRecommendations
+import com.fingertipfuture.hub.ui.chat.dropLastGrapheme
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.provider.TopFadeLayer
 import com.fingertipfuture.hub.ui.provider.brandIcon
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 键盘"动画停下来"的判定：ime 高度安静这么久，才认为键盘已经落定。
@@ -135,7 +147,9 @@ private const val KEYBOARD_SETTLE_MS = 180L
 internal fun ChatScreen(
     onOpenSettings: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenFloatingSearch: () -> Unit,
     onOpenPrivacy: () -> Unit,
+    onOpenSearchSettings: () -> Unit,
     onOpenRecommendation: (ChatRecommendationDestination) -> Unit = {},
     /** 从数据管理的搜索结果点进来时，定位到对应会话与消息。 */
     openSearchHitOnStart: ChatSearchHit? = null,
@@ -189,7 +203,6 @@ internal fun ChatScreen(
     var fullScreenKeyboardVisible by state::fullScreenKeyboardVisible
     // 这些状态放在进程级 ChatRuntime：转屏 / 切页面后请求继续，新的页面直接接上。
     var streaming by ChatRuntime.streamingState
-    var titleStreamHandle by state::titleStreamHandle
 
     // 聊天页的弹层状态单独收在 ChatOverlayState 里，见 ChatScreenOverlays.kt
     val overlay = state.overlay
@@ -207,6 +220,9 @@ internal fun ChatScreen(
     // 消息那一排的「更多」弹出来的更多栏（2026-10-15 用户给的图：从下方滑出）。
     // 存的是**点「更多」的那条消息在列表里的下标** —— 面板里的「删除」就删它（只删这一条）。
     var moreSheetIndex by state::moreSheetIndex
+    val pendingReminderIntent = state.pendingReminderIntent
+    val pendingAutoMemoryText = state.pendingAutoMemoryText
+    val pendingDeviceAction = state.pendingDeviceAction
     // 录音到 60 秒被自动结束/发送了 —— 之后手指再松开不该再处理一次
     // 每次录音只允许有一个计时器；旧的必须在开始、结束、取消时立刻作废
     var voiceTimerJob by state::voiceTimerJob
@@ -245,6 +261,17 @@ internal fun ChatScreen(
 
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val focusManager = LocalFocusManager.current
+    LaunchedEffect(pendingReminderIntent, pendingAutoMemoryText, pendingDeviceAction) {
+        if (
+            pendingReminderIntent != null ||
+            pendingAutoMemoryText != null ||
+            pendingDeviceAction != null
+        ) {
+            focusManager.clearFocus()
+            attachOpen = false
+            emojiOpen = false
+        }
+    }
 
 
     // ---- 当前助手（设置 › 通用设置 › 助手管理）----
@@ -269,7 +296,8 @@ internal fun ChatScreen(
         assistant.permSms ||
         assistant.permMms ||
         assistant.permContacts ||
-        assistant.permActivity
+        assistant.permActivity ||
+        assistant.permReminder
     val recommendationCards = remember(
         assistant,
         ProviderStore.providers,
@@ -353,7 +381,7 @@ internal fun ChatScreen(
 
 
     /** 抽屉里的动作：先把抽屉收起来再执行，免得动作的界面被抽屉盖住。 */
-    fun closeDrawerThen(action: () -> Unit) {
+    fun closeDrawerThen(action: suspend () -> Unit) {
         scope.launch {
             drawerState.close()
             action()
@@ -372,7 +400,6 @@ internal fun ChatScreen(
     // 界面被销毁时，只收掉明确属于这个页面的临时任务；聊天主请求由 ChatRuntime 保留。
     DisposableEffect(Unit) {
         onDispose {
-            titleStreamHandle?.cancel()
             voiceTimerJob?.cancel()
             // 录到一半转屏/退出：麦克风要放开、半截文件要删掉，不然一直占着麦克风（2026-10-15 自查）
             VoiceRecorder.cancel()
@@ -387,6 +414,14 @@ internal fun ChatScreen(
     val rows = remember(messages, showChatSearch) {
         if (showChatSearch) emptyList() else buildChatRows(messages)
     }
+    val currentRowKeys = remember(rows) { rows.map { it.key }.toSet() }
+    var renderedRowKeys by remember { mutableStateOf(emptySet<String>()) }
+    var settledBottomScroll by remember { mutableIntStateOf(0) }
+    val bottomScrollPending = scrollToBottomRequest > settledBottomScroll
+    val hiddenRowKeys = if (bottomScrollPending) currentRowKeys - renderedRowKeys else emptySet()
+    SideEffect {
+        if (!bottomScrollPending) renderedRowKeys = currentRowKeys
+    }
 
     // 列表用了**反向布局**（reverseLayout = true）：index 0 = 最新消息，画在屏幕底部。
     // 流式长高是"向上长"，视口天然锚在底部 —— 不需要每来一片字就 scrollToItem/scrollBy 一次；
@@ -396,15 +431,16 @@ internal fun ChatScreen(
     // 需要"回到底部"的地方（发消息 / 重新生成 / 本机插消息）显式滚到 index 0。
     LaunchedEffect(scrollToBottomRequest) {
         if (scrollToBottomRequest == 0) return@LaunchedEffect
-        // 等新行真正进入布局再贴底；同步滚动不会像 animateScrollToItem 那样
-        // 被紧接着的插入/测量打断，发送后必须一次到位。
-        withFrameNanos { }
+        // 先在同一帧请求贴底，再等测量后补一次。不能先空等一帧，
+        // 否则新头像/气泡会先以残片形式从胶囊上方露出来。
         listState.scrollToItem(0)
-        // 列表高度/底部留白可能在同一帧后还有一次测量，再补一帧确认。
         withFrameNanos { }
         if (listState.canScrollBackward) {
             listState.scrollToItem(0)
         }
+        // 新行在贴底完成前不绘制，避免头像/气泡先从胶囊上沿露出一帧。
+        renderedRowKeys = currentRowKeys
+        settledBottomScroll = scrollToBottomRequest
     }
 
     // 反向布局下"插入新消息"不会自动贴底：LazyColumn 会保持**原来那条**的位置，
@@ -425,7 +461,9 @@ internal fun ChatScreen(
         }
     }
     LaunchedEffect(nearOldest) {
-        if (nearOldest && ChatStore.hasOlder) ChatStore.loadOlder()
+        if (nearOldest && ChatStore.hasOlder) {
+            withContext(Dispatchers.IO) { ChatStore.loadOlder() }
+        }
     }
     LaunchedEffect(rows.size) {
         if (UiPrefs.autoScroll &&
@@ -433,6 +471,7 @@ internal fun ChatScreen(
             wasAtBottom &&
             pendingJumpMessageIndex == null
         ) {
+            listState.scrollToItem(0)
             withFrameNanos { }
             listState.scrollToItem(0)
         }
@@ -533,7 +572,7 @@ internal fun ChatScreen(
             MessageAction.Copy -> {
                 if (message.text.isBlank()) return
                 clipboard.setText(AnnotatedString(message.text))
-                Toast.makeText(context, context.getString(R.string.message_copied), Toast.LENGTH_SHORT).show()
+                context.showLocalizedToast(context.getString(R.string.message_copied))
             }
 
             // 重新发送（我发的那条）/ 重新生成（助手那条）：真跑 —— 清掉这条及其之后，再发一次请求
@@ -558,10 +597,10 @@ internal fun ChatScreen(
         // 定位要几秒（反查地名还要联网），先说一声，别让人以为点漏了
         // 「助手管理 › 权限与隐私 › 位置」没开就不给这个助手用（2026-10-16）
         if (!assistant.permLocation) {
-            Toast.makeText(context, "还没有开启位置权限：设置 › 权限与隐私", Toast.LENGTH_LONG).show()
+            context.showLocalizedToast("还没有开启位置权限：设置 › 权限与隐私", Toast.LENGTH_LONG)
             return
         }
-        Toast.makeText(context, "正在取当前位置…", Toast.LENGTH_SHORT).show()
+        context.showLocalizedToast("正在取当前位置…")
         val location = AttachmentStore.currentLocation(context)
         if (location == null) {
             notice("定位没成功（信号差，或系统没给定位权限），等会儿再试一次")
@@ -593,7 +632,10 @@ internal fun ChatScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (!granted) {
-            Toast.makeText(context, "没有麦克风权限：到系统设置里允许「麦克风」再长按说话", Toast.LENGTH_LONG).show()
+            context.showLocalizedToast(
+                "没有麦克风权限：到系统设置里允许「麦克风」再长按说话",
+                Toast.LENGTH_LONG,
+            )
         }
     }
 
@@ -606,6 +648,29 @@ internal fun ChatScreen(
             notice("没有定位权限，发不了位置 —— 到系统设置里允许「位置」权限再试")
         }
     }
+    val reminderNotificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            context.showLocalizedToast(
+                "没有通知权限，事项到点后无法发送提醒",
+                Toast.LENGTH_LONG,
+            )
+        }
+    }
+
+    fun requestReminderNotificationPermissionIfNeeded() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            reminderNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     fun handleRecommendation(kind: ChatRecommendationKind) {
         when (kind) {
             ChatRecommendationKind.Provider ->
@@ -622,7 +687,7 @@ internal fun ChatScreen(
                         ),
                     )
                 }.onFailure {
-                    Toast.makeText(context, "打不开系统设置页", Toast.LENGTH_SHORT).show()
+                    context.showLocalizedToast("打不开系统设置页")
                 }
             }
             ChatRecommendationKind.WeatherPrompt ->
@@ -657,7 +722,6 @@ internal fun ChatScreen(
 
 
 
-    fun stop() = state.stop()
 
     // 搜索是独立整页，不是叠在聊天页上的透明弹层：打开时整块聊天 UI 不组合，
     // 关闭后再按当前会话状态重建，既省掉入口卡顿，也避免键盘和消息列表抢布局。
@@ -680,7 +744,7 @@ internal fun ChatScreen(
                         if (id == ChatStore.currentConversationId) return@closeDrawerThen
                         // 切走前先掐掉旧会话的流，避免内容续写到新会话的内存里
                         stopStreaming()
-                        ChatStore.switchTo(id)
+                        withContext(Dispatchers.IO) { ChatStore.switchTo(id) }
                         input = ""
                         editingIndex = null
                         editingAttachments = emptyList()
@@ -697,6 +761,9 @@ internal fun ChatScreen(
                 },
                 onStatsClick = {
                     closeDrawerThen { onOpenStats() }
+                },
+                onFloatingSearchClick = {
+                    closeDrawerThen { onOpenFloatingSearch() }
                 },
                 onSettingsClick = { closeDrawerThen { onOpenSettings() } },
             )
@@ -783,20 +850,27 @@ internal fun ChatScreen(
                     }
                     // 反向布局：把行倒着喂进去 —— 时间分隔仍然显示在同一组消息的**上方**
                     items(rows.asReversed(), key = { it.key }) { row ->
-                        when (row) {
-                            is ChatRow.Time -> TimeLabel(at = row.at, now = System.currentTimeMillis())
-                            is ChatRow.Msg -> MessageBlock(
-                                message = row.message,
-                                // 只有"我发的最近三条"能编辑（用户 2026-10-15）
-                                canEdit = row.message.isFromUser && row.index in editableIndices,
-                                onAction = { action, message -> onMessageAction(action, message) },
-                                onImageClick = { attachment ->
-                                    // 看图之前先把键盘/添加栏收掉，免得挡着
-                                    focusManager.clearFocus()
-                                    attachOpen = false
-                                    previewImage = attachment
-                                },
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .alpha(if (row.key in hiddenRowKeys) 0f else 1f),
+                        ) {
+                            when (row) {
+                                is ChatRow.Time ->
+                                    TimeLabel(at = row.at, now = System.currentTimeMillis())
+                                is ChatRow.Msg -> MessageBlock(
+                                    message = row.message,
+                                    // 只有"我发的最近三条"能编辑（用户 2026-10-15）
+                                    canEdit = row.message.isFromUser && row.index in editableIndices,
+                                    onAction = { action, message -> onMessageAction(action, message) },
+                                    onImageClick = { attachment ->
+                                        // 看图之前先把键盘/添加栏收掉，免得挡着
+                                        focusManager.clearFocus()
+                                        attachOpen = false
+                                        previewImage = attachment
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -858,8 +932,9 @@ internal fun ChatScreen(
                     },
                     // 编辑态下发送：把编辑那条原本带的附件一起送回去
                     onSend = { send(attachments = editingAttachments) },
-                    onStop = { stop() },
-                    streaming = streaming,
+                    onStop = { stopStreaming() },
+                    latestValue = { state.input },
+                    streaming = streaming || state.submissionPending,
                     // 「表情」的循环（和「＋」对称）：
                     //   表情栏没开            → 收键盘（键盘下滑**露出**表情栏）+ 关掉添加栏（它下滑）
                     //   表情栏开着、键盘也在  → 收键盘，露出表情栏
@@ -937,8 +1012,14 @@ internal fun ChatScreen(
                     panelHeight = attachPanelHeight,
                     // 点一下就插到输入框光标处（输入框留着内容，可以连着点好几个）
                     onPick = { symbol -> input = input + symbol },
-                    // 左下角那颗「返回」：关掉表情栏（它自己会下滑退场）
-                    onClose = { emojiOpen = false },
+                    onDelete = { input = dropLastGrapheme(input) },
+                    onSend = {
+                        if (input.isNotBlank() && !streaming) {
+                            send()
+                            emojiOpen = false
+                        }
+                    },
+                    canSend = input.isNotBlank() && !streaming,
                 )
             }
             // 「＋」的添加栏：和键盘同一块地方（同一个高度），从下面滑出来（照微信那个）
@@ -1095,9 +1176,39 @@ internal fun ChatScreen(
         context = context,
         state = overlay,
         onOpenSearchHit = { hit -> openSearchHit(hit) },
+        onOpenSearchSettings = onOpenSearchSettings,
         onRegenerateTitle = { conversation -> regenerateConversationTitle(conversation) },
         onDeleteConversation = { conversation -> deleteConversation(conversation) },
     )
+
+    pendingReminderIntent?.let { intent ->
+        AssistantReminderIntentDialog(
+            intent = intent,
+            onDismiss = { state.dismissReminderIntent() },
+            onSave = { save ->
+                state.confirmReminderSave(save)
+                requestReminderNotificationPermissionIfNeeded()
+            },
+            onClose = { close -> state.confirmReminderClose(close) },
+            onDelete = { delete -> state.confirmReminderDelete(delete) },
+        )
+    }
+
+    pendingAutoMemoryText?.let { text ->
+        AutoMemoryApprovalDialog(
+            text = text,
+            onApprove = { state.approveAutoMemory() },
+            onReject = { state.rejectAutoMemory() },
+        )
+    }
+
+    pendingDeviceAction?.let { intent ->
+        AgentDeviceActionDialog(
+            intent = intent,
+            onApprove = { state.approveDeviceAction() },
+            onReject = { state.rejectDeviceAction() },
+        )
+    }
 
 }
 

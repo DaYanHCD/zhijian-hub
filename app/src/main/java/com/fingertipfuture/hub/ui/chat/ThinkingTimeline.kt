@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import com.fingertipfuture.hub.ui.component.LocalizedText as Text
@@ -92,7 +93,7 @@ internal fun ThinkBox(message: HubMessage, open: Boolean, onToggle: () -> Unit) 
         )
         message.thoughtMs > 0L -> listOf(
             HubThinkingStep(
-                id = "reasoning-empty-${message.at}",
+                id = "reasoning-summary-${message.at}",
                 kind = "reasoning",
                 title = "思考",
                 status = HubThinkingStep.STATUS_DONE,
@@ -101,19 +102,17 @@ internal fun ThinkBox(message: HubMessage, open: Boolean, onToggle: () -> Unit) 
         )
         else -> emptyList()
     }
-    val expanded = open
+    if (steps.isEmpty() && !message.streaming && message.thoughtMs <= 0L) return
+    val canExpand = steps.isNotEmpty()
+    val expanded = open && canExpand
     val fullWidth = expanded || expandedStepIds.isNotEmpty()
     val elapsedMs = when {
         message.thoughtMs > 0L -> message.thoughtMs
         message.streaming -> (now - message.at).coerceAtLeast(1L)
         else -> steps.sumOf { it.durationMs }.coerceAtLeast(0L)
     }
-    val seconds = String.format(
-        java.util.Locale.US,
-        "%.1f",
-        elapsedMs / 1000.0,
-    )
     val live = message.streaming && message.thoughtMs <= 0L
+    val durationLabel = thinkingDurationLabel(elapsedMs, live)
     val shape = RoundedCornerShape(16.dp)
     val cardColor = lerp(
         MaterialTheme.colorScheme.background,
@@ -152,7 +151,7 @@ internal fun ThinkBox(message: HubMessage, open: Boolean, onToggle: () -> Unit) 
             if (!expanded) {
                 Row(
                     modifier = Modifier
-                        .clickable(onClick = onToggle)
+                        .then(if (canExpand) Modifier.clickable(onClick = onToggle) else Modifier)
                         .padding(start = 12.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -164,24 +163,23 @@ internal fun ThinkBox(message: HubMessage, open: Boolean, onToggle: () -> Unit) 
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (live) {
-                            "正在思考 $seconds 秒"
-                        } else {
-                            "思考了 $seconds 秒"
-                        },
+                        text = durationLabel,
                         color = HubInk,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         softWrap = false,
+                        style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
                     )
-                    Spacer(Modifier.width(6.dp))
-                    MaterialSymbol(
-                        resId = R.drawable.ic_expand,
-                        contentDescription = stringResource(R.string.message_thought_expand),
-                        size = 16.dp,
-                        tint = HubInk,
-                    )
+                    if (canExpand) {
+                        Spacer(Modifier.width(6.dp))
+                        MaterialSymbol(
+                            resId = R.drawable.ic_expand,
+                            contentDescription = stringResource(R.string.message_thought_expand),
+                            size = 16.dp,
+                            tint = HubInk,
+                        )
+                    }
                 }
             } else {
                 Row(
@@ -234,14 +232,19 @@ internal fun ThinkBox(message: HubMessage, open: Boolean, onToggle: () -> Unit) 
     }
 }
 
+/** 是否应该显示思考框：有真实步骤、真实 reasoning，或正在流式等待。 */
+internal fun hasThinkingContent(message: HubMessage): Boolean =
+    message.streaming || message.thoughtMs > 0L || realThinkingSteps(message).isNotEmpty()
+
 /**
- * 只保留真正需要展示的链路：reasoning / 搜索 / 技能 / 位置 / 记忆。
- * 本地「理解问题 / 模型规划 / 组织回答」只是内部状态，不冒充模型的思考步骤。
+ * 展示真实发生的能力链路：思考路由、技能目录、技能、工具和结果。
+ * 不展示“理解问题”等纯内部占位状态，也不伪造模型隐藏推理。
  */
 private fun realThinkingSteps(message: HubMessage): List<HubThinkingStep> {
     val visibleKinds = setOf(
         "reasoning", "search", "skill", "location", "memory",
         "time", "screen_time", "calendar", "apps", "contacts", "sms", "mms",
+        "reminder", "activity", "agent_thinking", "catalog", "tool_result",
     )
     val steps = message.thinkingSteps
         .filter { it.kind in visibleKinds }
@@ -309,8 +312,8 @@ private fun ThinkingTimeline(
             val trace = message.searchTraces.firstOrNull {
                 it.query == step.detail || it.query == step.title
             }
-            val content: (@Composable () -> Unit)? = when {
-                step.kind == "search" && step.items.isNotEmpty() -> {
+            val content: @Composable () -> Unit = when {
+                step.kind == "search" -> {
                     val scroll = rememberScrollState()
                     val block: @Composable () -> Unit = {
                         Column(
@@ -320,6 +323,14 @@ private fun ThinkingTimeline(
                                 .verticalScroll(scroll),
                             verticalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
+                            if (step.items.isEmpty()) {
+                                Text(
+                                    text = "搜索未返回可展示的结果",
+                                    color = HubInkSoft,
+                                    fontSize = 12.5.sp,
+                                    lineHeight = 19.sp,
+                                )
+                            }
                             step.items.forEach { result ->
                                 val clickable = result.url.startsWith("http://") ||
                                     result.url.startsWith("https://")
@@ -367,7 +378,7 @@ private fun ThinkingTimeline(
                     }
                     block
                 }
-                step.kind == "reasoning" && (step.detail.isNotBlank() || pending) -> {
+                step.kind == "reasoning" -> {
                     {
                         ReasoningStepContent(
                             text = step.detail,
@@ -375,11 +386,10 @@ private fun ThinkingTimeline(
                         )
                     }
                 }
-                step.kind != "search" && step.kind != "reasoning" &&
-                    step.detail.isNotBlank() -> {
+                else -> {
                     {
                         Text(
-                            text = step.detail,
+                            text = step.detail.ifBlank { "未返回可展示的详情" },
                             color = HubInkSoft,
                             fontSize = 12.5.sp,
                             lineHeight = 19.sp,
@@ -387,7 +397,6 @@ private fun ThinkingTimeline(
                         )
                     }
                 }
-                else -> null
             }
 
             ThinkingStep(
@@ -397,6 +406,9 @@ private fun ThinkingTimeline(
                 onExpandedChange = { onStepExpandedChange(step.id, it) },
                 icon = when (step.kind) {
                     "reasoning" -> R.drawable.ic_bulb
+                    "agent_thinking" -> R.drawable.ic_bulb
+                    "catalog" -> R.drawable.ic_list
+                    "tool_result" -> R.drawable.ic_history
                     "memory" -> R.drawable.ic_psychology
                     "location" -> R.drawable.ic_location_on
                     "search" -> R.drawable.ic_search
@@ -407,6 +419,8 @@ private fun ThinkingTimeline(
                     "apps" -> R.drawable.ic_attach_lite_puzzle
                     "contacts" -> R.drawable.ic_contact_mail
                     "sms", "mms" -> R.drawable.ic_attach_lite_phone
+                    "reminder" -> R.drawable.ic_alarm
+                    "activity" -> R.drawable.ic_history
                     else -> R.drawable.ic_bulb
                 },
                 label = {
@@ -414,7 +428,7 @@ private fun ThinkingTimeline(
                         Column {
                             val query = step.detail.ifBlank { step.title }
                             Text(
-                                text = "搜索网页：" + query,
+                                text = step.title.ifBlank { "联网查询" } + "：" + query,
                                 color = HubInk,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
@@ -453,21 +467,15 @@ private fun ThinkingTimeline(
                             }
                         }
                     } else if (step.kind == "reasoning") {
-                        val seconds = String.format(
-                            java.util.Locale.US,
-                            "%.1f",
-                            step.durationMs.coerceAtLeast(0L) / 1000.0,
-                        )
                         Text(
-                            text = if (pending) {
-                                "正在思考 $seconds 秒"
-                            } else {
-                                "思考了 $seconds 秒"
-                            },
+                            text = thinkingDurationLabel(step.durationMs, pending),
                             color = HubInk,
                             fontSize = 13.5.sp,
                             lineHeight = 20.sp,
                             maxLines = 1,
+                            style = LocalTextStyle.current.copy(
+                                fontFeatureSettings = "tnum",
+                            ),
                         )
                     } else {
                         Column {
@@ -505,6 +513,12 @@ private fun ThinkingTimeline(
     }
 }
 
+internal fun thinkingDurationLabel(durationMs: Long, pending: Boolean): String {
+    val displayMs = durationMs.coerceAtLeast(100L)
+    val seconds = String.format(java.util.Locale.US, "%.1f", displayMs / 1000.0)
+    return if (pending) "正在思考 $seconds 秒" else "思考了 $seconds 秒"
+}
+
 @Composable
 private fun ReasoningStepContent(text: String, waiting: Boolean) {
     val scroll = rememberScrollState()
@@ -516,7 +530,11 @@ private fun ReasoningStepContent(text: String, waiting: Boolean) {
     ) {
         if (waiting || text.isBlank()) {
             Text(
-                text = "正在思考…",
+                text = if (waiting) {
+                    "正在思考…"
+                } else {
+                    "模型未返回可展示的思考内容"
+                },
                 color = HubInkSoft,
                 fontSize = 12.5.sp,
                 lineHeight = 19.sp,
@@ -579,12 +597,10 @@ private fun ThinkingStep(
     onExpandedChange: (Boolean) -> Unit,
     @DrawableRes icon: Int,
     label: @Composable () -> Unit,
-    content: (@Composable () -> Unit)?,
+    content: @Composable () -> Unit,
     lineColor: Color,
     fillWidth: Boolean,
 ) {
-    val hasContent = content != null
-
     Column(modifier = Modifier.then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)) {
         Row(
             modifier = Modifier
@@ -601,13 +617,7 @@ private fun ThinkingStep(
                         drawLine(lineColor, Offset(x, centerY + gap), Offset(x, size.height), stroke)
                     }
                 }
-                .then(
-                    if (hasContent) {
-                        Modifier.clickable { onExpandedChange(!expanded) }
-                    } else {
-                        Modifier
-                    },
-                )
+                .clickable { onExpandedChange(!expanded) }
                 .padding(vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -627,19 +637,17 @@ private fun ThinkingStep(
                     Modifier
                 },
             ) { label() }
-            if (hasContent) {
-                Spacer(Modifier.width(4.dp))
-                MaterialSymbol(
-                    resId = R.drawable.ic_expand,
-                    contentDescription = null,
-                    modifier = Modifier.rotate(if (expanded) 180f else 0f),
-                    size = 16.dp,
-                    tint = HubInkSoft,
-                )
-            }
+            Spacer(Modifier.width(4.dp))
+            MaterialSymbol(
+                resId = R.drawable.ic_expand,
+                contentDescription = null,
+                modifier = Modifier.rotate(if (expanded) 180f else 0f),
+                size = 16.dp,
+                tint = HubInkSoft,
+            )
         }
 
-        if (expanded && content != null) {
+        if (expanded) {
             Box(
                 modifier = Modifier
                     .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)

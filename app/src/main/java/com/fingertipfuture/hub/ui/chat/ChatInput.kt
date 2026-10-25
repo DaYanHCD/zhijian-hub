@@ -11,6 +11,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -82,6 +83,7 @@ import com.fingertipfuture.hub.ui.component.HubSendColor
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubDropShadow
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 
 /**
@@ -110,13 +112,15 @@ internal fun ChatInputCapsule(
     streaming: Boolean,
     /** 点「＋」：开/关下面的添加栏（照微信那个）。 */
     onAddClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** 点击时实时读取输入值，避免输入法刚回传文字、界面尚未重组时仍走「＋」。 */
+    latestValue: () -> String = { value },
     /** 添加栏是否开着（开着时「＋」用主色，提示当前状态）。 */
     addOpen: Boolean,
     /** 点「表情」：开/关下面的表情栏（照微信那个）。 */
     onEmojiClick: () -> Unit,
     /** 表情栏是否开着（开着时「表情」用主色，提示当前状态）。 */
     emojiOpen: Boolean,
-    modifier: Modifier = Modifier,
     /** 隐藏表情按钮；输入框会自动占满它原来的宽度。 */
     showEmojiButton: Boolean = true,
     /** 是不是语音态（语音态：左端是键盘键、中间是「长按说话」，**只做 UI**）。 */
@@ -240,7 +244,9 @@ internal fun ChatInputCapsule(
                     // 单行时正好 50（规格）；输入框写到多行时整颗胶囊跟着长高
                     .heightIn(min = ChatMetrics.INPUT_CAPSULE_HEIGHT),
             ) {
-                Box {
+                // 图标切换时旧图层仍在退场；必须裁在胶囊轮廓内，
+                // 否则快速发送时可能看到一颗残留加号画到胶囊下面。
+                Box(modifier = Modifier.clip(capsuleShape)) {
                     Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -314,7 +320,7 @@ internal fun ChatInputCapsule(
                                 color = HubInk,
                                 fontSize = ChatMetrics.INPUT_TEXT_SIZE,
                                 lineHeight = ChatMetrics.INPUT_TEXT_LINE,
-                            ),
+                            ).enforceHubTypography(),
                             cursorBrush = SolidColor(HubInk),
                             // 键盘右下角显示「发送」，按它就真的发出去
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -380,13 +386,21 @@ internal fun ChatInputCapsule(
                         FourthSlotSwap(
                         slot = when {
                             streaming -> InputSlot.Stop
-                            !voiceMode && value.isNotEmpty() -> InputSlot.Send
+                            shouldSubmitFromInput(value, voiceMode) -> InputSlot.Send
                             else -> InputSlot.Add
                         },
                         addOpen = addOpen,
                         onStop = onStop,
-                        onSend = onSend,
-                            onAddClick = onAddClick,
+                        onPrimaryAction = {
+                            if (shouldSubmitFromInput(latestValue(), voiceMode)) {
+                                onSend()
+                            } else {
+                                onAddClick()
+                            }
+                        },
+                        shouldSubmitNow = {
+                            shouldSubmitFromInput(latestValue(), voiceMode)
+                        },
                         )
                     }
                 }
@@ -425,6 +439,9 @@ internal fun ChatInputCapsule(
  */
 /** 输入胶囊第 4 颗的三种状态（互相之间都走"旧的右滑走、新的左滑入"）。 */
 private enum class InputSlot { Stop, Send, Add }
+
+internal fun shouldSubmitFromInput(value: String, voiceMode: Boolean): Boolean =
+    !voiceMode && value.isNotBlank()
 
 /** 三个图标相对胶囊下底要抬高多少（让空态/单行时它们落在胶囊正中间，和原来一致）。 */
 private val ICON_BOTTOM_LIFT = 8.dp
@@ -602,63 +619,66 @@ private fun MicKeyboardSwap(
     }
 }
 
-/**
- * 第 4 颗：停止 / 发送 / 添加，同样**滑动切换**（旧的往右滑走、新的从左滑进来）。
- * 实现理由同 [MicKeyboardSwap]：用 `AnimatedVisibility`，不用 `AnimatedContent`（会裁内容）。
- */
+/** 第 4 颗：停止 / 发送 / 添加，同一时刻只渲染一个，避免旧图标残留一帧。 */
 @Composable
 private fun FourthSlotSwap(
     slot: InputSlot,
     addOpen: Boolean,
     onStop: () -> Unit,
-    onSend: () -> Unit,
-    onAddClick: () -> Unit,
+    onPrimaryAction: () -> Unit,
+    shouldSubmitNow: () -> Boolean,
 ) {
+    var pressShowsStop by remember { mutableStateOf(false) }
+    val stopInteraction = remember { MutableInteractionSource() }
+    val sendInteraction = remember { MutableInteractionSource() }
+    val addInteraction = remember { MutableInteractionSource() }
+    val addPressed by addInteraction.collectIsPressedAsState()
+    // 手指按下时立刻把过期的加号换成停止；等抬指发送时界面已经是正确状态。
+    LaunchedEffect(addPressed) {
+        if (addPressed) {
+            if (shouldSubmitNow()) pressShowsStop = true
+        } else {
+            kotlinx.coroutines.delay(50)
+            if (!addPressed) pressShowsStop = false
+        }
+    }
+    val visibleSlot = if (pressShowsStop) InputSlot.Stop else slot
+
     Box(modifier = Modifier.size(ChatMetrics.INPUT_ICON_SIZE)) {
-        AnimatedVisibility(
-            visible = slot == InputSlot.Stop,
-            enter = slideInHorizontally(animationSpec = ICON_SWAP_SPEC) { -it / 2 } +
-                fadeIn(animationSpec = ICON_SWAP_FADE_SPEC),
-            exit = slideOutHorizontally(animationSpec = ICON_SWAP_SPEC) { it / 2 } +
-                fadeOut(animationSpec = ICON_SWAP_FADE_SPEC),
-        ) {
-            MaterialSymbol(
+        when (visibleSlot) {
+            InputSlot.Stop -> MaterialSymbol(
                 resId = R.drawable.ic_stop,
                 contentDescription = stringResource(R.string.chat_stop),
-                modifier = Modifier.clickable(onClick = onStop),
+                modifier = Modifier.clickable(
+                    interactionSource = stopInteraction,
+                    indication = null,
+                    onClick = onStop,
+                ),
                 size = ChatMetrics.INPUT_ICON_SIZE,
                 // 和旁边那几颗一样用主墨色（用户 2026-10-15：停止要跟图片里 ⊕ 那排图标同一种样子，
                 // 而图片里胶囊上的图标都是黑的；原来用主题 primary 是偏蓝的 #3B5BDB）。
                 tint = HubInk,
             )
-        }
-        // 语音态不显示发送键（用户 2026-10-15：切到语音时「添加」不变成发送）
-        AnimatedVisibility(
-            visible = slot == InputSlot.Send,
-            enter = slideInHorizontally(animationSpec = ICON_SWAP_SPEC) { -it / 2 } +
-                fadeIn(animationSpec = ICON_SWAP_FADE_SPEC),
-            exit = slideOutHorizontally(animationSpec = ICON_SWAP_SPEC) { it / 2 } +
-                fadeOut(animationSpec = ICON_SWAP_FADE_SPEC),
-        ) {
-            MaterialSymbol(
+            // 语音态不显示发送键（用户 2026-10-15：切到语音时「添加」不变成发送）
+            InputSlot.Send -> MaterialSymbol(
                 resId = R.drawable.ic_send,
                 contentDescription = stringResource(R.string.chat_send),
-                modifier = Modifier.clickable(onClick = onSend),
+                modifier = Modifier.clickable(
+                    interactionSource = sendInteraction,
+                    indication = null,
+                    onClick = onPrimaryAction,
+                ),
                 size = ChatMetrics.INPUT_ICON_SIZE,
                 tint = HubSendColor,
             )
-        }
-        AnimatedVisibility(
-            visible = slot == InputSlot.Add,
-            enter = slideInHorizontally(animationSpec = ICON_SWAP_SPEC) { -it / 2 } +
-                fadeIn(animationSpec = ICON_SWAP_FADE_SPEC),
-            exit = slideOutHorizontally(animationSpec = ICON_SWAP_SPEC) { it / 2 } +
-                fadeOut(animationSpec = ICON_SWAP_FADE_SPEC),
-        ) {
-            MaterialSymbol(
+            InputSlot.Add -> MaterialSymbol(
                 resId = R.drawable.ic_circle_plus,
                 contentDescription = stringResource(R.string.chat_action_add),
-                modifier = Modifier.clickable(onClick = onAddClick),
+                modifier = Modifier.clickable(
+                    interactionSource = addInteraction,
+                    indication = null,
+                    onClick = onPrimaryAction,
+                ),
                 size = ChatMetrics.INPUT_ICON_SIZE,
                 tint = if (addOpen) MaterialTheme.colorScheme.primary else HubInk,
             )

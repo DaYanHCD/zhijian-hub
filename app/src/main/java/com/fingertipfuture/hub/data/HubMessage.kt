@@ -103,7 +103,18 @@ internal data class HubMessage(
      * 定位消息；不发给模型，也不写进导出存档。
      */
     val id: String = "",
+    /** 仅在本次发送后触发一次单表情气泡动画；不写入数据库。 */
+    val playEmojiOnce: Boolean = false,
 ) {
+    companion object {
+        /**
+         * 本地助手提醒的持久化标记。
+         *
+         * 这类消息需要留在聊天记录里，但不能作为真正的模型回复发送给后续接口。
+         */
+        const val LOCAL_NOTICE_MODEL = "__hub_local_notice__"
+    }
+
     /** DeepSeek 官方 Search 每成功请求 5 元 / 1000 次。 */
     val searchCostYuan: Double
         get() = searchTraces.count {

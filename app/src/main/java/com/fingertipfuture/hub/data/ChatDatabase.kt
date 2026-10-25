@@ -8,66 +8,6 @@ import android.util.Log
 import java.io.File
 import java.util.UUID
 
-/** 一行会话（左边抽屉列表里的一行；列表 UI 下一波做，这里先把表和数据准备好）。 */
-internal data class HubConversation(
-    val id: String,
-    val title: String,
-    val pinned: Boolean,
-    val createdAt: Long,
-    val updatedAt: Long,
-    val folderId: String? = null,
-)
-
-/** 一次「搜索聊天」命中：会话标题命中，或某条消息命中。 */
-internal data class ChatSearchHit(
-    val conversationId: String,
-    val conversationTitle: String,
-    /** user / assistant；标题命中时为空。 */
-    val role: String,
-    /** 原始正文；界面按关键词截一段展示。 */
-    val text: String,
-    val at: Long,
-    /** 消息在会话里的顺序（message_node.sort_order）；-1 = 只命中了会话标题。 */
-    val messageIndex: Int,
-)
-
-/** 一条消息在库里的一行（= 某个节点的一个版本）。 */
-internal data class HubStoredMessage(
-    val nodeId: String,
-    val versionIndex: Int,
-    val sortOrder: Int,
-    val role: String,
-    val text: String,
-    val model: String,
-    val reasoning: String,
-    val attachments: List<HubAttachment>,
-    val at: Long,
-    val thoughtMs: Long,
-    val skillsUsed: List<HubSkillTrace>,
-    val searchTraces: List<HubSearchTrace>,
-    val thinkingSteps: List<HubThinkingStep>,
-) {
-    fun toHubMessage() = HubMessage(
-        id = "$nodeId-$versionIndex",
-        role = role,
-        text = text,
-        at = at,
-        model = model,
-        reasoning = reasoning,
-        attachments = attachments,
-        thoughtMs = thoughtMs,
-        skillsUsed = skillsUsed,
-        searchTraces = searchTraces,
-        thinkingSteps = thinkingSteps,
-    )
-}
-
-internal data class HubModelUsage(
-    val model: String,
-    val messages: Int,
-    val usage: HubTokenUsage,
-)
-
 /**
  * 对话库：**手写 SQL 的 SQLite**（不用 Room —— 铁律一：不引第三方库；SQLite 是安卓自带的）。
  *
@@ -77,7 +17,7 @@ internal data class HubModelUsage(
  *
  * 线程：所有方法都是**同步**的，调用方一般在主线程（Android 的 SQLite 有缓存，
  * 我们一次只写一行，几毫秒级；流式那种高频写入由 `ChatStore` 攒 500 ms 再写）。
- * 单进程自用，不开 WAL —— 保持磁盘上只有一个 `hub.db` 文件，好备份、好排查。
+ * 单进程使用 WAL：读查询不阻塞流式写入；备份通过 ChatStore 的归档 API 导出。
  */
 internal object ChatDatabase {
 
@@ -91,58 +31,7 @@ internal object ChatDatabase {
     /** 读连接：WAL 下和写连接分开，长查询不会把主线程的发送写入堵住。 */
     private var readDb: SQLiteDatabase? = null
 
-    // ---- 表结构（v1）----
-    //
-    // 会话：抽屉列表里的一行
-    private const val SQL_CONVERSATION = """
-        CREATE TABLE conversation (
-            id         TEXT PRIMARY KEY,
-            title      TEXT NOT NULL DEFAULT '',
-            pinned     INTEGER NOT NULL DEFAULT 0,
-            folder_id  TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-    """
-    private const val SQL_CONVERSATION_INDEX =
-        "CREATE INDEX idx_conversation_updated ON conversation(pinned DESC, updated_at DESC)"
-
-    // 节点 = 对话里的「一个位置」（一轮提问、一轮回答各占一个）。
-    // 单独一张表是为了「重新生成 / 编辑重发」：那是给同一个位置**追加一个版本**，
-    // 不是往列表尾部再加一条。位置与版本拆开，将来才不用改数据模型。
-    private const val SQL_NODE = """
-        CREATE TABLE message_node (
-            id              TEXT PRIMARY KEY,
-            conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
-            parent_node_id  TEXT,
-            select_index    INTEGER NOT NULL DEFAULT 0,
-            sort_order      INTEGER NOT NULL
-        )
-    """
-    private const val SQL_NODE_INDEX =
-        "CREATE INDEX idx_node_conversation ON message_node(conversation_id, sort_order)"
-
-    // 消息 = 某个节点的一个版本（现在每个节点只有一个版本，version_index 都是 0）
-    private const val SQL_MESSAGE = """
-        CREATE TABLE message (
-            id               TEXT PRIMARY KEY,
-            node_id          TEXT NOT NULL REFERENCES message_node(id) ON DELETE CASCADE,
-            version_index    INTEGER NOT NULL DEFAULT 0,
-            role             TEXT NOT NULL,
-            content          TEXT NOT NULL DEFAULT '',
-            reasoning        TEXT NOT NULL DEFAULT '',
-            attachments_json TEXT NOT NULL DEFAULT '[]',
-            model            TEXT,
-            at               INTEGER NOT NULL,
-            thought_ms       INTEGER NOT NULL DEFAULT 0,
-            skills_json      TEXT NOT NULL DEFAULT '[]',
-            search_traces_json TEXT NOT NULL DEFAULT '[]',
-            thinking_steps_json TEXT NOT NULL DEFAULT '[]'
-        )
-    """
-    private const val SQL_MESSAGE_INDEX =
-        "CREATE UNIQUE INDEX idx_message_version ON message(node_id, version_index)"
-
+    @Synchronized
     fun initialize(context: Context) {
         if (db != null) return
         val app = context.applicationContext
@@ -152,6 +41,8 @@ internal object ChatDatabase {
             .onFailure { Log.e(TAG, "搜索索引初始化失败", it) }
         runCatching { ensureUsageTable(opened) }
             .onFailure { Log.e(TAG, "创建用量表失败", it) }
+        runCatching { ensureFloatingUsageTable(opened) }
+            .onFailure { Log.e(TAG, "创建悬浮搜题用量表失败", it) }
         runCatching { migrateLegacyJsonIfNeeded(app) }
             .onFailure { Log.e(TAG, "旧对话迁移失败", it) }
         readDb = runCatching {
@@ -264,6 +155,26 @@ internal object ChatDatabase {
         )
     }
 
+    /**
+     * 悬浮搜题不属于某条聊天消息，单独记请求。接口没返回 usage 时数值仍为 0，
+     * 但请求次数会保留，统计页能区分“没有用过”和“服务商未返回用量”。
+     */
+    private fun ensureFloatingUsageTable(database: SQLiteDatabase) {
+        database.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS floating_usage (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                at            INTEGER NOT NULL,
+                provider      TEXT NOT NULL DEFAULT '',
+                model         TEXT NOT NULL DEFAULT '',
+                input_tokens  INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cached_tokens INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+    }
+
     private fun newId(prefix: String) = prefix + UUID.randomUUID().toString()
 
     // ---------------- 会话 ----------------
@@ -304,6 +215,20 @@ internal object ChatDatabase {
         if (row == -1L) error("无法创建会话")
         return id
     }
+
+    fun conversationExists(conversationId: String): Boolean {
+        if (conversationId.isBlank()) return false
+        return requireDb().rawQuery(
+            "SELECT 1 FROM conversation WHERE id = ? LIMIT 1",
+            arrayOf(conversationId),
+        ).use { it.moveToFirst() }
+    }
+
+    fun mostRecentConversationId(): String? =
+        requireDb().rawQuery(
+            "SELECT id FROM conversation ORDER BY updated_at DESC LIMIT 1",
+            null,
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
     /** 会话还是空标题时，用第一条用户消息补上（列表 UI 要显示它）。 */
     fun setTitleIfEmpty(conversationId: String, title: String) {
@@ -620,6 +545,48 @@ internal object ChatDatabase {
             }
         }
 
+    fun recordFloatingUsage(
+        provider: String,
+        model: String,
+        usage: HubTokenUsage,
+        at: Long = System.currentTimeMillis(),
+    ) {
+        requireDb().insert(
+            "floating_usage",
+            null,
+            ContentValues().apply {
+                put("at", at)
+                put("provider", provider.take(80))
+                put("model", model.take(160))
+                put("input_tokens", usage.input)
+                put("output_tokens", usage.output)
+                put("cached_tokens", usage.cached)
+            },
+        )
+    }
+
+    fun floatingUsageTotals(): HubFloatingUsage =
+        requireDb().rawQuery(
+            """
+            SELECT COUNT(*),
+                   COALESCE(SUM(input_tokens), 0),
+                   COALESCE(SUM(output_tokens), 0),
+                   COALESCE(SUM(cached_tokens), 0)
+            FROM floating_usage
+            """.trimIndent(),
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return@use HubFloatingUsage(0, HubTokenUsage())
+            HubFloatingUsage(
+                requests = cursor.getInt(0),
+                usage = HubTokenUsage(
+                    input = cursor.getInt(1),
+                    output = cursor.getInt(2),
+                    cached = cursor.getInt(3),
+                ),
+            )
+        }
+
     /** 按模型汇总：回复条数 + 接口返回的 token。老消息没有模型名时不出现在这里。 */
     fun modelUsage(): List<HubModelUsage> =
         requireDb().rawQuery(
@@ -672,22 +639,63 @@ internal object ChatDatabase {
         val database = requireDb()
         database.beginTransaction()
         try {
-            val nodeRow = database.insert("message_node", null, ContentValues().apply {
-                put("id", nodeId)
-                put("conversation_id", conversationId)
-                if (parentNodeId == null) putNull("parent_node_id") else put("parent_node_id", parentNodeId)
-                put("select_index", 0)
-                put("sort_order", sortOrder)
-            })
-            if (nodeRow == -1L) error("无法创建消息节点")
-            val messageRow = database.insert("message", null, messageValues(nodeId, 0, message))
-            if (messageRow == -1L) error("无法写入消息")
-            ChatSearchIndex.index(database, "$nodeId-0", message.text)
+            insertMessage(database, conversationId, nodeId, parentNodeId, sortOrder, message)
             touch(database, conversationId, message.at)
             database.setTransactionSuccessful()
         } finally {
             database.endTransaction()
         }
+    }
+
+    /**
+     * 给后台提醒等外部生产者追加一条消息。
+     *
+     * 父节点、顺序和两条 INSERT 放在同一事务里，避免和正在聊天的 UI 同时追加时
+     * 算出相同的 sort_order。返回新节点 id。
+     */
+    fun appendMessageAtEnd(conversationId: String, message: HubMessage): String {
+        val database = requireDb()
+        database.beginTransaction()
+        try {
+            val parentNodeId = database.rawQuery(
+                "SELECT id FROM message_node WHERE conversation_id = ? " +
+                    "ORDER BY sort_order DESC LIMIT 1",
+                arrayOf(conversationId),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+            val sortOrder = database.rawQuery(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM message_node " +
+                    "WHERE conversation_id = ?",
+                arrayOf(conversationId),
+            ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+            val nodeId = newId("n-")
+            insertMessage(database, conversationId, nodeId, parentNodeId, sortOrder, message)
+            touch(database, conversationId, message.at)
+            database.setTransactionSuccessful()
+            return nodeId
+        } finally {
+            database.endTransaction()
+        }
+    }
+
+    private fun insertMessage(
+        database: SQLiteDatabase,
+        conversationId: String,
+        nodeId: String,
+        parentNodeId: String?,
+        sortOrder: Int,
+        message: HubMessage,
+    ) {
+        val nodeRow = database.insert("message_node", null, ContentValues().apply {
+            put("id", nodeId)
+            put("conversation_id", conversationId)
+            if (parentNodeId == null) putNull("parent_node_id") else put("parent_node_id", parentNodeId)
+            put("select_index", 0)
+            put("sort_order", sortOrder)
+        })
+        if (nodeRow == -1L) error("无法创建消息节点")
+        val messageRow = database.insert("message", null, messageValues(nodeId, 0, message))
+        if (messageRow == -1L) error("无法写入消息")
+        ChatSearchIndex.index(database, "$nodeId-0", message.text)
     }
 
     /**
@@ -925,12 +933,12 @@ internal object ChatDatabase {
         }
 
         override fun onCreate(db: SQLiteDatabase) {
-            db.execSQL(SQL_CONVERSATION)
-            db.execSQL(SQL_CONVERSATION_INDEX)
-            db.execSQL(SQL_NODE)
-            db.execSQL(SQL_NODE_INDEX)
-            db.execSQL(SQL_MESSAGE)
-            db.execSQL(SQL_MESSAGE_INDEX)
+            db.execSQL(ChatDatabaseSchema.CONVERSATION)
+            db.execSQL(ChatDatabaseSchema.CONVERSATION_INDEX)
+            db.execSQL(ChatDatabaseSchema.NODE)
+            db.execSQL(ChatDatabaseSchema.NODE_INDEX)
+            db.execSQL(ChatDatabaseSchema.MESSAGE)
+            db.execSQL(ChatDatabaseSchema.MESSAGE_INDEX)
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

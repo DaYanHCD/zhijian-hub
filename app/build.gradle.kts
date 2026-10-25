@@ -1,4 +1,5 @@
 import java.util.Properties
+import groovy.json.JsonSlurper
 
 plugins {
     id("com.android.application")
@@ -14,9 +15,55 @@ val keystoreProps = Properties().apply {
     }
 }
 
+// 发布脚本会临时改写下面两个字面量，成功后恢复源码。读取本地已发布清单可以让
+// “恢复后的旧字面量”自动追到下一次发布的版本，不会再生成低于线上版本的 Debug/Beta。
+val publishedVersion = runCatching {
+    val manifest = rootProject.file("../发布版本/更新清单/version-debug.json")
+    if (!manifest.isFile) return@runCatching null
+    val latest = (JsonSlurper().parse(manifest) as Map<*, *>)["latest"] as? Map<*, *>
+        ?: return@runCatching null
+    val code = (latest["versionCode"] as? Number)?.toInt() ?: return@runCatching null
+    val name = latest["versionName"]?.toString()?.takeIf { it.isNotBlank() }
+        ?: return@runCatching null
+    code to name
+}.getOrNull()
+
+val openPublishedVersion = runCatching {
+    val manifest = rootProject.file("../发布版本/开源版/更新清单/version-os.json")
+    if (!manifest.isFile) return@runCatching null
+    val latest = (JsonSlurper().parse(manifest) as Map<*, *>)["latest"] as? Map<*, *>
+        ?: return@runCatching null
+    val code = (latest["versionCode"] as? Number)?.toInt() ?: return@runCatching null
+    val name = latest["versionName"]?.toString()?.takeIf { it.isNotBlank() }
+        ?: return@runCatching null
+    code to name
+}.getOrNull()
+
+val forcedVersionCode = System.getProperty("hubVersionCode")?.toIntOrNull()
+val forcedVersionName = System.getProperty("hubVersionName")?.takeIf { it.isNotBlank() }
+if ((forcedVersionCode == null) != (forcedVersionName == null)) {
+    throw GradleException("hubVersionCode 和 hubVersionName 必须同时提供")
+}
+val effectiveOpenVersion = if (forcedVersionCode != null && forcedVersionName != null) {
+    forcedVersionCode to forcedVersionName
+} else {
+    openPublishedVersion ?: (2 to "1.0.1")
+}
+val openUpdateBaseUrl = System.getProperty("hubOpenUpdateBaseUrl")
+    ?.takeIf { it.isNotBlank() }
+    ?: "https://fingertipfuture.com/hub/os/"
+
 android {
     namespace = "com.fingertipfuture.hub"
     compileSdk = 36
+
+    // 每个渠道只打包自己的本地更新日志，避免开源版混入 Beta 历史。
+    val betaManifestAssets = rootProject.file("../发布版本/更新清单")
+    sourceSets {
+        getByName("debug").assets.srcDir(betaManifestAssets)
+        getByName("release").assets.srcDir(betaManifestAssets)
+        maybeCreate("beta").assets.srcDir(betaManifestAssets)
+    }
 
     defaultConfig {
         // ⚠️ 与「指尖」不同的包名：两个 App 可以同时装在一台手机上
@@ -28,15 +75,28 @@ android {
         applicationId = "com.fingertipfuture.hub"
         minSdk = 24
         targetSdk = 36
-        // 2026-10-20：GitHub 开源版 1.0.0。
-        // Beta 渠道由发布脚本在构建时临时覆盖版本号，不受这里的开源版本号影响。
-        versionCode = 1
-        versionName = "1.0.0"
+        // 源码默认版本与当前 Beta 渠道保持一致，避免日常构建产生降级包。
+        // 发布脚本仍可在构建时临时覆盖版本号。
+        versionCode = 67
+        versionName = "1.0.59"
+        if (forcedVersionCode != null && forcedVersionName != null) {
+            versionCode = forcedVersionCode
+            versionName = forcedVersionName
+        } else {
+            publishedVersion?.let { (code, name) ->
+                val declaredCode = versionCode ?: 0
+                if (code > declaredCode) {
+                    versionCode = code
+                    versionName = name
+                }
+            }
+        }
 
-        // 更新服务地址（必须以 / 结尾）。清单在 <根>/update/version.json。
+        // Beta 与正式版使用现有站点；开源版使用独立的 OS 清单和公告目录。
         buildConfigField("String", "UPDATE_BASE_URL", "\"https://fingertipfuture.com/hub/\"")
+        buildConfigField("String", "OPEN_UPDATE_BASE_URL", "\"$openUpdateBaseUrl\"")
+        buildConfigField("String", "UPDATE_CHANNEL", "\"release\"")
         buildConfigField("boolean", "TEST_BUILD", "false")
-        // 开源版不读取闭源渠道的更新清单；由下面的 open 构建覆盖为 true。
         buildConfigField("boolean", "OPEN_SOURCE_BUILD", "false")
     }
 
@@ -63,7 +123,7 @@ android {
         debug {
             applicationIdSuffix = ".beta"
             versionNameSuffix = "-debug"
-            // 测试通道：读 update/version-debug.json，正式版读 update/version.json
+            buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
             buildConfigField("boolean", "TEST_BUILD", "true")
         }
 
@@ -95,6 +155,7 @@ android {
         create("open") {
             initWith(getByName("release"))
             applicationIdSuffix = ".os"
+            buildConfigField("String", "UPDATE_CHANNEL", "\"os\"")
             buildConfigField("boolean", "OPEN_SOURCE_BUILD", "true")
         }
 
@@ -126,7 +187,7 @@ android {
             // 「这是 Beta」由桌面名字「指尖Hub-Beta」表达。
             versionNameSuffix = ""
             signingConfig = signingConfigs.getByName("debug")
-            // 测试通道：读 update/version-debug.json（正式版读 update/version.json）
+            buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
             buildConfigField("boolean", "TEST_BUILD", "true")
         }
     }
@@ -157,15 +218,40 @@ android {
     }
 }
 
+androidComponents {
+    onVariants(selector().withBuildType("open")) { variant ->
+        val (code, name) = effectiveOpenVersion
+        variant.outputs.forEach { output ->
+            output.versionCode.set(code)
+            output.versionName.set(name)
+        }
+    }
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3:1.2.1")
     testImplementation("junit:junit:4.13.2")
+    // 本地 JVM 单测没有 Android org.json 实现；生产包仍使用系统 org.json。
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// System properties 不会自动进入 Gradle build-cache key；显式声明后，测试地址或
+// 发布版本切换时不会错误复用上一次的 BuildConfig。
+tasks.configureEach {
+    if (name.startsWith("generate") && name.endsWith("BuildConfig")) {
+        inputs.property("hubVersionCodeInput", forcedVersionCode?.toString().orEmpty())
+        inputs.property("hubVersionNameInput", forcedVersionName.orEmpty())
+        inputs.property("effectiveOpenVersionCode", effectiveOpenVersion.first)
+        inputs.property("effectiveOpenVersionName", effectiveOpenVersion.second)
+        inputs.property("hubOpenUpdateBaseUrlInput", openUpdateBaseUrl)
+    }
 }

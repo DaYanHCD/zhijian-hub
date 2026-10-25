@@ -15,6 +15,41 @@ class ChatOrderTest {
     }
 
     @Test
+    fun persistentLocalNoticeUsesTheNextDatabaseSortOrder() {
+        val notice = HubMessage(
+            role = "assistant",
+            text = "还没配置供应商",
+            at = 1L,
+            model = HubMessage.LOCAL_NOTICE_MODEL,
+            localOnly = true,
+        )
+
+        assertEquals(8, ChatStore.sortOrderForNewMessage(notice, 8))
+    }
+
+    @Test
+    fun storedLocalNoticeRestoresAsNonModelMessage() {
+        val message = HubStoredMessage(
+            nodeId = "n-1",
+            versionIndex = 0,
+            sortOrder = 8,
+            role = "assistant",
+            text = "还没配置供应商",
+            model = HubMessage.LOCAL_NOTICE_MODEL,
+            reasoning = "",
+            attachments = emptyList(),
+            at = 1L,
+            thoughtMs = 0L,
+            skillsUsed = emptyList(),
+            searchTraces = emptyList(),
+            thinkingSteps = emptyList(),
+        ).toHubMessage()
+
+        assertEquals(true, message.localOnly)
+        assertEquals("", message.model)
+    }
+
+    @Test
     fun attachmentReusedByEditIsNotScheduledForDeletion() {
         val path = "/data/user/0/com.fingertipfuture.hub.beta/files/attachments/a.jpg"
         val message = HubMessage(

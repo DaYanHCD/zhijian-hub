@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.fingertipfuture.hub.data.LanguageStore
 
 /**
  * 全应用统一的图标入口。
@@ -30,7 +31,7 @@ fun MaterialSymbol(
 ) {
     Icon(
         painter = painterResource(id = resId),
-        contentDescription = contentDescription,
+        contentDescription = contentDescription?.let { LanguageStore.localize(it) },
         modifier = modifier.size(size),
         tint = tint,
     )

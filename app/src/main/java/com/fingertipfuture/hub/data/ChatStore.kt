@@ -24,6 +24,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -58,6 +61,7 @@ internal object ChatStore {
     private var saveLoopRunning = false
     @Volatile private var saveEpoch = 0L
     private val saveLock = Any()
+    private val restoreLock = Mutex()
 
     private data class PendingSave(
         val conversationId: String,
@@ -103,6 +107,7 @@ internal object ChatStore {
     var hasOlder: Boolean by mutableStateOf(false)
         private set
 
+    @Synchronized
     fun initialize(context: Context) {
         appContext = context.applicationContext
         ChatDatabase.initialize(context)
@@ -135,8 +140,27 @@ internal object ChatStore {
     }
 
     /**
+     * 授予公共存储权限或启动时在后台调用；只在数据库为空时恢复，避免覆盖当前数据。
+     */
+    suspend fun restorePersistentSnapshotIfNeeded(context: Context): Boolean = restoreLock.withLock {
+        withContext(Dispatchers.IO) {
+            if (ChatDatabase.messageCount() != 0 || !PersistentChatBackup.hasBackup(context)) {
+                return@withContext false
+            }
+            val restored = PersistentChatBackup.restoreArchive(context)
+                ?.takeIf { it.isNotEmpty() }
+                ?: return@withContext false
+            val result = importArchiveDetailed(restored, includeLocalOnly = true)
+            result.conversationIds.lastOrNull()?.let { openConversation(it) }
+            Log.i("HubChatStore", "已从跨卸载快照恢复 ${result.count} 段会话")
+            result.count > 0
+        }
+    }
+
+    /**
      * 新建一段空会话并切过去；**旧会话原样留在库里**（顶栏「新对话」用）。
      */
+    @Synchronized
     fun newConversation(title: String = ""): String {
         flush()
         val id = runCatching { ChatDatabase.newConversation(title) }
@@ -154,6 +178,7 @@ internal object ChatStore {
     }
 
     /** 切到另一段会话；切走前把当前这段没落盘的流式正文先写掉。 */
+    @Synchronized
     fun switchTo(id: String) {
         if (id == conversationId) return
         if (conversations.none { it.id == id }) return
@@ -191,6 +216,7 @@ internal object ChatStore {
             .map { it.toHubMessage() }
 
     /** 向上滚动到顶时加载更早的一页；不改变当前滚动位置。 */
+    @Synchronized
     fun loadOlder() {
         if (!hasOlder) return
         val id = conversationId ?: return
@@ -212,6 +238,7 @@ internal object ChatStore {
     }
 
     /** 搜索跳转需要跨到更早的消息时，直接读回整段（极少发生，优先保证定位正确）。 */
+    @Synchronized
     fun loadAllForCurrent() {
         val id = conversationId ?: return
         entries = runCatching {
@@ -224,6 +251,7 @@ internal object ChatStore {
         publish()
     }
 
+    @Synchronized
     private fun loadRecentEntries(id: String): List<Entry> {
         val page = runCatching { ChatDatabase.recentMessages(id, PAGE_SIZE + 1) }
             .onFailure { Log.e("HubChatStore", "读取最近消息失败", it) }
@@ -235,6 +263,7 @@ internal object ChatStore {
     }
 
     /** 这个路径是否已经被当前内存里的某条消息引用（发送被拦截时用来决定能不能删新导入的文件）。 */
+    @Synchronized
     fun isAttachmentReferenced(path: String): Boolean =
         path.isNotBlank() && entries.any { entry ->
             entry.message.attachments.any { it.path == path }
@@ -242,7 +271,9 @@ internal object ChatStore {
 
     fun usageTotals(): HubTokenUsage = ChatDatabase.usageTotals()
     fun modelUsage(): List<HubModelUsage> = ChatDatabase.modelUsage()
+    fun floatingUsageTotals(): HubFloatingUsage = ChatDatabase.floatingUsageTotals()
 
+    @Synchronized
     fun recordUsage(usage: HubTokenUsage) {
         val last = entries.lastOrNull { !it.message.localOnly } ?: return
         if (last.message.role != "assistant") return
@@ -251,13 +282,22 @@ internal object ChatStore {
     }
 
     /** 导出全部会话（当前流式内容先落盘）。 */
+    @Synchronized
     fun exportArchive(flushFirst: Boolean = true): List<ArchivedConversation> {
+        return exportArchive(flushFirst = flushFirst, includeLocalOnly = false)
+    }
+
+    @Synchronized
+    internal fun exportArchive(
+        flushFirst: Boolean,
+        includeLocalOnly: Boolean,
+    ): List<ArchivedConversation> {
         if (flushFirst) flush()
         return conversations.mapNotNull { conversation ->
             val messages = ChatDatabase.messages(conversation.id)
                 .filterNot { it.isIncompletePlaceholder() }
                 .map { it.toHubMessage() }
-                .filterNot { it.localOnly }
+                .filterNot { !includeLocalOnly && it.localOnly }
             if (messages.isEmpty()) return@mapNotNull null
             ArchivedConversation(
                 title = conversation.title,
@@ -282,14 +322,18 @@ internal object ChatStore {
     fun importArchive(items: List<ArchivedConversation>): Int =
         importArchiveDetailed(items).count
 
-    internal fun importArchiveDetailed(items: List<ArchivedConversation>): ArchiveImportResult {
+    @Synchronized
+    internal fun importArchiveDetailed(
+        items: List<ArchivedConversation>,
+        includeLocalOnly: Boolean = false,
+    ): ArchiveImportResult {
         var imported = 0
         val conversationIds = mutableListOf<String>()
         // 导入要么全部成功，要么全部回滚；中途磁盘满/数据库异常不能留下半套会话。
         ChatDatabase.transaction {
             items.forEach { archived ->
                 val messages = archived.messages
-                    .filterNot { it.localOnly }
+                    .filterNot { !includeLocalOnly && it.localOnly }
                     .map { message ->
                         message.copy(attachments = remapAttachmentPaths(message.attachments))
                     }
@@ -328,6 +372,7 @@ internal object ChatStore {
     }
 
     /** 文件恢复失败时，把刚才导入的会话一起撤掉，避免留下指向半套附件的记录。 */
+    @Synchronized
     internal fun deleteImportedConversations(ids: List<String>) {
         if (ids.isEmpty()) return
         runCatching {
@@ -348,12 +393,14 @@ internal object ChatStore {
         }
     }
 
+    @Synchronized
     fun setPinned(id: String, pinned: Boolean) {
         runCatching { ChatDatabase.setPinned(id, pinned) }
             .onFailure { Log.e("HubChatStore", "置顶会话失败", it); return }
         refreshConversations()
     }
 
+    @Synchronized
     fun renameConversation(id: String, title: String) {
         val clean = title.trim()
         if (clean.isEmpty()) return
@@ -362,12 +409,14 @@ internal object ChatStore {
         refreshConversations()
     }
 
+    @Synchronized
     fun moveToFolder(id: String, folderId: String?) {
         runCatching { ChatDatabase.setFolder(id, folderId) }
             .onFailure { Log.e("HubChatStore", "移动会话失败", it); return }
         refreshConversations()
     }
 
+    @Synchronized
     fun clearFolder(folderId: String) {
         runCatching { ChatDatabase.clearFolder(folderId) }
             .onFailure { Log.e("HubChatStore", "清空文件夹失败", it); return }
@@ -378,7 +427,8 @@ internal object ChatStore {
      * 删除一段会话。删的是当前这段时，自动切到剩下的最近一段；一段都不剩就回到空态。
      * 调用方在流式生成中要先 [ChatScreen.stopStreaming]（界面层才知道在不在生成）。
      */
-    fun deleteConversation(id: String) {
+    @Synchronized
+    fun deleteConversation(id: String): Boolean {
         try {
             val deletingCurrent = id == conversationId
             val droppedMessages = if (deletingCurrent) {
@@ -395,11 +445,13 @@ internal object ChatStore {
             } else {
                 ChatDatabase.messages(id).filterNot { it.isIncompletePlaceholder() }.map { it.toHubMessage() }
             }
+            // 先算其它会话仍引用的附件；这一步失败时不能先删数据库。
+            val keepPaths = allAttachmentPathsExcept(id)
             ChatDatabase.deleteConversation(id)
-            dropAttachments(droppedMessages, allAttachmentPathsExcept(id))
+            dropAttachments(droppedMessages, keepPaths)
             if (!deletingCurrent) {
                 refreshConversations()
-                return
+                return true
             }
             entries = emptyList()
             hasOlder = false
@@ -409,8 +461,10 @@ internal object ChatStore {
             publish()
             refreshConversations()
             conversations.firstOrNull()?.let { switchTo(it.id) }
+            return true
         } catch (t: Throwable) {
             Log.e("HubChatStore", "删除会话失败", t)
+            return false
         }
     }
 
@@ -418,7 +472,8 @@ internal object ChatStore {
      * 删除所有对话及其附件，并回到空态。
      * 调用方如果正在生成回答，应先 [ChatRuntime.stopCurrent]。
      */
-    fun deleteAllConversations() {
+    @Synchronized
+    fun deleteAllConversations(): Boolean {
         try {
             cancelPendingSave()
             val paths = ChatDatabase.allAttachmentPaths()
@@ -436,8 +491,10 @@ internal object ChatStore {
             persistActive(null)
             publish()
             refreshConversations()
+            return true
         } catch (t: Throwable) {
             Log.e("HubChatStore", "删除全部会话失败", t)
+            return false
         }
     }
 
@@ -445,6 +502,7 @@ internal object ChatStore {
      * 清空附件目录，同时清掉消息里的引用，避免留下打不开的死链接。
      * 返回实际删掉的文件数（文件枚举/删除都在调用方所在线程，通常由设置页调用）。
      */
+    @Synchronized
     fun clearAllAttachments(context: Context): Int {
         val files = AttachmentStore.listAttachments(context)
         val paths = files.map { it.path }.toSet()
@@ -459,13 +517,56 @@ internal object ChatStore {
         return deleted
     }
 
+    /** 删除单个附件，同时清掉消息里的引用；只允许删除 App 私有附件目录里的文件。 */
+    @Synchronized
+    fun deleteAttachment(context: Context, path: String): Boolean {
+        if (path.isBlank()) return false
+        val deleted = AttachmentStore.deleteOwnedAttachment(context, path)
+        if (deleted) {
+            runCatching { ChatDatabase.stripAttachmentReferences(setOf(path)) }
+                .onFailure { Log.e("HubChatStore", "清理单个附件引用失败", it) }
+            reloadCurrent()
+        }
+        return deleted
+    }
+
     /** 外部修改了消息表（例如清理附件引用）后，把当前会话重新读进内存。 */
+    @Synchronized
     fun reloadCurrent() {
         val id = conversationId ?: return
         entries = loadRecentEntries(id)
         publish()
     }
 
+    /** 通知点进来时切到目标会话；库里已经删掉时返回 false。 */
+    @Synchronized
+    fun openConversation(id: String): Boolean {
+        if (id.isBlank()) return false
+        refreshConversations()
+        if (conversations.none { it.id == id }) return false
+        if (conversationId == id) {
+            reloadCurrent()
+            refreshConversations()
+        } else {
+            switchTo(id)
+        }
+        return true
+    }
+
+    /**
+     * 后台提醒 Worker 直接写库后调用；只有它正好属于当前会话才刷新 UI。
+     * 正在流式生成时不打断气泡，等通知点击/下次进入会话时从库里读回完整版。
+     */
+    @Synchronized
+    fun reloadIfCurrent(id: String) {
+        if (conversationId != id) return
+        if (entries.lastOrNull()?.message?.streaming == true) return
+        entries = loadRecentEntries(id)
+        publish()
+        refreshConversations()
+    }
+
+    @Synchronized
     fun append(message: HubMessage, refreshList: Boolean = true): Boolean =
         appendAll(listOf(message), refreshList)
 
@@ -473,7 +574,14 @@ internal object ChatStore {
     internal fun sortOrderForNewMessage(
         message: HubMessage,
         nextPersistedSortOrder: Int,
-    ): Int = if (message.localOnly) LOCAL_ONLY_SORT_ORDER else nextPersistedSortOrder
+    ): Int = if (
+        message.localOnly &&
+        message.model != HubMessage.LOCAL_NOTICE_MODEL
+    ) {
+        LOCAL_ONLY_SORT_ORDER
+    } else {
+        nextPersistedSortOrder
+    }
 
     /**
      * 一次插一批（导入对话用）。返回是否全部写成功。
@@ -481,12 +589,14 @@ internal object ChatStore {
      * 磁盘满 / 数据库损坏时不能把异常直接抛到点击事件里：先把内存回滚到调用前，
      * 再让界面提示“保存失败”。否则 App 会从“发一条消息”直接崩掉。
      */
+    @Synchronized
     fun appendAll(extra: List<HubMessage>, refreshList: Boolean = true): Boolean {
         if (extra.isEmpty()) return true
         val previousEntries = entries
         val previousConversation = conversationId
         try {
-            extra.forEach { message ->
+            ChatDatabase.transaction {
+                extra.forEach { message ->
                 val nodeId = "n-" + UUID.randomUUID()
                 // 第一条用户消息顺便当会话标题（抽屉列表要显示它）
                 val title = if (message.role == "user" && message.text.isNotBlank()) {
@@ -494,17 +604,20 @@ internal object ChatStore {
                 } else {
                     ""
                 }
-                val conversation = if (message.localOnly) {
-                    conversationId
-                } else {
+                val persistentLocalNotice =
+                    message.localOnly && message.model == HubMessage.LOCAL_NOTICE_MODEL
+                val persist = !message.localOnly || persistentLocalNotice
+                val conversation = if (persist) {
                     ensureConversation(title)
+                } else {
+                    conversationId
                 }
                 val sortOrder = sortOrderForNewMessage(
                     message = message,
-                    nextPersistedSortOrder = if (message.localOnly) {
-                        0
-                    } else {
+                    nextPersistedSortOrder = if (persist) {
                         ChatDatabase.nextSortOrder(checkNotNull(conversation))
+                    } else {
+                        0
                     },
                 )
                 entries = entries + Entry(
@@ -513,8 +626,9 @@ internal object ChatStore {
                     sortOrder = sortOrder,
                     message = message.copy(id = "$nodeId-0"),
                 )
-                // 本机提示（「已导出…」这类）不落库：重开不必看见，也更不该发给模型
-                if (!message.localOnly) {
+                // 普通本机提示不落库；未配置供应商的提醒需要落库，但仍通过 model
+                // 标记为 localOnly，重载后不会进入模型上下文或导出存档。
+                if (persist) {
                     checkNotNull(conversation)
                     ChatDatabase.setTitleIfEmpty(conversation, title)
                     ChatDatabase.appendMessage(
@@ -527,6 +641,7 @@ internal object ChatStore {
                         sortOrder = sortOrder,
                         message = message,
                     )
+                }
                 }
             }
             publish()
@@ -581,6 +696,7 @@ internal object ChatStore {
         }
 
     /** 就地改写最后一条（流式增量、收尾都要用）。空列表时什么都不做。 */
+    @Synchronized
     fun updateLast(transform: (HubMessage) -> HubMessage) {
         updateLastInternal(transform)
     }
@@ -591,11 +707,13 @@ internal object ChatStore {
      * 请求协程切走会话后可能还会继续跑几帧；所有请求内更新都必须过这一层，
      * 否则旧请求会把思考步骤写进新会话。
      */
+    @Synchronized
     fun updateLastIf(conversationId: String, transform: (HubMessage) -> HubMessage): Boolean {
         if (this.conversationId != conversationId) return false
         return updateLastInternal(transform)
     }
 
+    @Synchronized
     private fun updateLastInternal(transform: (HubMessage) -> HubMessage): Boolean {
         val last = entries.lastOrNull() ?: return false
         val updated = transform(last.message)
@@ -623,6 +741,7 @@ internal object ChatStore {
      * 「编辑重发」用：编辑一条旧消息并发送 = 那条及其之后的所有内容作废，
      * 新的内容再作为新消息追加（用户 2026-10-15 定的行为）。
      */
+    @Synchronized
     fun truncateFrom(
         index: Int,
         /** 编辑/重发马上要复用的附件，不能跟旧消息一起删。 */
@@ -667,13 +786,14 @@ internal object ChatStore {
      * 库里删完还要 [ChatDatabase.renumber] 重新编号：内存按下标、`truncateFrom` / `append` 也按下标写
      * `sort_order`，中间挖空一个号，下一次 append 就会和已有的号撞上。
      */
-    fun removeAt(index: Int) {
-        if (index < 0 || index >= entries.size) return
+    @Synchronized
+    fun removeAt(index: Int): Boolean {
+        if (index < 0 || index >= entries.size) return false
         val target = entries[index]
         if (target.message.localOnly) {
             entries = entries.filterIndexed { i, _ -> i != index }
             publish()
-            return
+            return true
         }
         saveNow()
         val nodeId = target.nodeId
@@ -681,13 +801,15 @@ internal object ChatStore {
         val remaining = entries.toMutableList().also { it.removeAt(index) }
         val dbOk = conversationId?.let { id ->
             runCatching {
-                ChatDatabase.deleteNode(id, nodeId)
-                ChatDatabase.renumberAll(id)
+                ChatDatabase.transaction {
+                    ChatDatabase.deleteNode(id, nodeId)
+                    ChatDatabase.renumberAll(id)
+                }
             }.isSuccess
         } ?: true
         if (!dbOk) {
             Log.e("HubChatStore", "删除消息失败，内存保持不变")
-            return
+            return false
         }
         dropAttachments(
             dropped = listOf(target.message),
@@ -703,13 +825,16 @@ internal object ChatStore {
             }
         }
         publish()
+        return true
     }
 
     /** 立刻写，不等那半秒（界面销毁 / 流式结束时用）。 */
+    @Synchronized
     fun flush() {
         saveNow()
     }
 
+    @Synchronized
     private fun ensureConversation(title: String): String {
         conversationId?.let { return it }
         return ChatDatabase.newConversation(title).also {
@@ -719,6 +844,7 @@ internal object ChatStore {
         }
     }
 
+    @Synchronized
     private fun scheduleSave() {
         val conversation = conversationId ?: return
         val last = entries.lastOrNull { !it.message.localOnly } ?: return
@@ -767,6 +893,7 @@ internal object ChatStore {
         }
     }
 
+    @Synchronized
     private fun saveNow() {
         // 让已经排队/正在跑的自动落盘作废，避免旧快照最后覆盖新内容。
         saveEpoch++
@@ -805,6 +932,7 @@ internal object ChatStore {
     }
 
     /** 丢弃后台保存任务；随后通常要删除会话或重建内存窗口。 */
+    @Synchronized
     private fun cancelPendingSave() {
         saveEpoch++
         synchronized(saveLock) {
@@ -815,19 +943,24 @@ internal object ChatStore {
         saveJob = null
     }
 
+    @Synchronized
     private fun refreshConversations() {
         conversations = runCatching { ChatDatabase.conversations() }
             .onFailure { Log.e("HubChatStore", "读取会话列表失败", it) }
             .getOrDefault(emptyList())
+        appContext?.let(PersistentChatBackup::schedule)
     }
 
+    @Synchronized
     private fun persistActive(id: String?) {
         appContext?.let { UiPrefs.setActiveConversationId(it, id) }
     }
 
     /** 内存 → Compose 状态。 */
+    @Synchronized
     private fun publish() {
         messages = entries.map { it.message }
+        appContext?.let(PersistentChatBackup::schedule)
     }
 }
 

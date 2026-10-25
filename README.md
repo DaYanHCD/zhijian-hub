@@ -10,7 +10,7 @@
 > 指尖Hub-OS 是一个独立的、纯原生、本地优先的 Android AI 对话客户端。
 > 它不依赖自有账号或聊天后端，用户用自己的 API Key 直连模型服务。
 
-**当前开源版本：1.0.0**<br>
+**当前开源版本：1.0.1**<br>
 **桌面名称：指尖Hub-OS**<br>
 **包名：`com.fingertipfuture.hub.os`**<br>
 **系统要求：Android 7.0+**
@@ -19,12 +19,16 @@
 
 开源版安装包发布在 GitHub Releases，也可以从[项目官网](https://fingertipfuture.top/)下载。
 
-- [下载 1.0.0 APK](https://github.com/DaYanHCD/zhijian-hub/releases/download/v1.0.0/hub-1.0.0-os.apk)
+- [下载最新开源版](https://github.com/DaYanHCD/zhijian-hub/releases/latest)
 - [查看全部 Releases](https://github.com/DaYanHCD/zhijian-hub/releases)
-- 安装包大小：1,734,263 字节
-- SHA-256：`feff79cec3f7deb1869a566792dad9955d6eba5215cb97ccddbbd106c9358050`
+- 1.0.1 安装包大小：5,488,022 字节
+- SHA-256：`1b9e6dd4beac3904a9d96a20dfb2a8512272e44d04dff4197e87571ebe83f6d8`
+- [第三方组件与素材许可](THIRD_PARTY_NOTICES.md)
 
 安装包使用正式签名，不包含任何 API Key。安装后需要在应用内添加自己的模型供应商。
+
+开源版使用独立的更新清单，发布 1.0.1 后可在「设置 → 关于 → 检查更新」中直接升级到
+后续的 1.0.2、1.0.3 等版本。
 
 ## 界面
 
@@ -116,8 +120,10 @@ app/src/main/java/com/fingertipfuture/hub/
 
 第三方素材：
 
+- 聊天页细线图标来自 [Lucide](https://lucide.dev)（ISC）。
+- 设置与功能页图标来自 Google Material Symbols（Apache-2.0）。
 - 供应商 Logo 来自 [LobeHub Icons](https://github.com/lobehub/lobe-icons)（MIT）。
-- 界面图标来自 Google Material Symbols（Apache-2.0）。
+- 静态与动画表情来自 Google Noto Emoji（SIL OFL 1.1）。
 
 指尖Hub 与 OpenAI、Google、DeepSeek 等模型或搜索服务商没有隶属关系，
 相关名称和商标归各自权利人所有。

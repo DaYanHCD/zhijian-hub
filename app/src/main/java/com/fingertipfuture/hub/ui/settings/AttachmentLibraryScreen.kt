@@ -1,9 +1,11 @@
 package com.fingertipfuture.hub.ui.settings
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
 import com.fingertipfuture.hub.ui.component.hubCardBorder
 import com.fingertipfuture.hub.data.AttachmentStore
+import com.fingertipfuture.hub.data.LanguageStore
 import com.fingertipfuture.hub.data.HubAttachment
 import com.fingertipfuture.hub.data.VoicePlayer
 import com.fingertipfuture.hub.ui.chat.ImagePreviewOverlay
@@ -144,10 +147,12 @@ internal fun AttachmentLibraryScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ImageFileCard(
+@OptIn(ExperimentalFoundationApi::class)
+internal fun ImageFileCard(
     file: AttachmentStore.StoredAttachment,
     subtitle: String,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
 ) {
     val bitmap = remember(file.path) {
         runCatching {
@@ -172,13 +177,16 @@ private fun ImageFileCard(
                 .clip(RoundedCornerShape(14.dp))
                 .hubCardBorder(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable(onClick = onClick),
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (image != null) {
                 Image(
                     bitmap = image,
-                    contentDescription = "图片",
+                    contentDescription = LanguageStore.localize("图片"),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize(),
                 )

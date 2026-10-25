@@ -18,6 +18,11 @@ class MathFormulaTest {
     }
 
     @Test
+    fun `parenthesized scripts keep unsupported letters readable`() {
+        assertEquals("p₍A₎ - p₍Hg₎", MathText.format("p_(A) - p_(Hg)"))
+    }
+
+    @Test
     fun `roots and greek symbols are converted`() {
         assertEquals("√(x²+1)", MathText.format("\\sqrt{x^2+1}"))
         assertEquals("α ≤ β", MathText.format("\\alpha \\le \\beta"))
@@ -76,9 +81,10 @@ class MathFormulaTest {
     @Test
     fun `inline delimiters are recognized`() {
         val token = Regex(
-            """\$\$[^$\n]+\$\$|\$[^$\n]+\$|\\\([^\n]*?\\\)|\\\[[^\n]*?\\\]""",
+            """\$\$[^$\n]+\$\$|\$[^$\n]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]""",
         )
         assertTrue(token.containsMatchIn("设 \\(x^2\\) 为已知"))
+        assertTrue(token.containsMatchIn("压力差为 \\(7644 \\text{ Pa}\n\\)，单位为帕"))
         assertTrue(token.containsMatchIn("结果是 \$x_1\$"))
     }
 }

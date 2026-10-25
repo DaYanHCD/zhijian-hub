@@ -132,6 +132,7 @@ internal object ChatArchive {
                 put("searchTraces", searchTracesToJson(message.searchTraces))
                 put("thinkingSteps", thinkingStepsToJson(message.thinkingSteps))
                 put("attachments", HubAttachment.listToJson(message.attachments))
+                put("localOnly", message.localOnly)
             })
         }
     }
@@ -154,6 +155,7 @@ internal object ChatArchive {
                 skillsUsed = skillTracesFromJson(item.optJSONArray("skills")),
                 searchTraces = searchTracesFromJson(item.optJSONArray("searchTraces")),
                 thinkingSteps = thinkingStepsFromJson(item.optJSONArray("thinkingSteps")),
+                localOnly = item.optBoolean("localOnly", false),
             )
         }
     }

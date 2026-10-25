@@ -31,7 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
 import com.fingertipfuture.hub.ui.chat.ChatMetrics
-import com.fingertipfuture.hub.ui.component.settingsChromeColor
+import com.fingertipfuture.hub.ui.component.HubCapsuleColor
+import com.fingertipfuture.hub.ui.component.HubInk
 import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.hubDropShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
@@ -39,7 +40,7 @@ import com.fingertipfuture.hub.ui.component.hubCardBorder
 /**
  * 提供商这几页共用的「悬浮」零件。
  *
- * 颜色和阴影**跟设置页 / 聊天页那套完全一致**：底色 `settingsChromeColor()`，
+ * 颜色和阴影**跟设置页 / 聊天页那套完全一致**：底色 `HubCapsuleColor`，
  * 外阴影用同一条 `hubDropShadow`（x0 / y4 / 模糊 4），不再用 Material 的 8dp elevation。
  */
 
@@ -65,7 +66,7 @@ internal val FLOATING_BAR_TOP_MARGIN = ChatMetrics.TOP_BAR_TOP_MARGIN
 internal val FLOATING_BAR_SPACE = FLOATING_BAR_TOP_MARGIN + FLOATING_BAR_HEIGHT + 10.dp
 
 /** 渐隐层在悬浮栏下沿之外多留的尾巴（照「指尖」的设置页）。 */
-private val TOP_FADE_TAIL = 40.dp
+private val TOP_FADE_TAIL = 56.dp
 
 /** 状态栏高度。 */
 @Composable
@@ -93,6 +94,9 @@ internal fun TopFadeLayer(
                     // ⚠️ 规矩（用户 2026-10-14 亲自定的）：**顶部最多 50% 底色**，不能更浓。
                     //    我一度擅自改成"顶部完全不透明"，被骂回来了 —— 别再动这个值。
                     0f to MaterialTheme.colorScheme.background.copy(alpha = 0.5f),
+                    0.28f to MaterialTheme.colorScheme.background.copy(alpha = 0.38f),
+                    0.58f to MaterialTheme.colorScheme.background.copy(alpha = 0.2f),
+                    0.82f to MaterialTheme.colorScheme.background.copy(alpha = 0.06f),
                     1f to Color.Transparent,
                 ),
             ),
@@ -108,7 +112,7 @@ internal fun FloatingBackBar(
 ) {
     val shape = RoundedCornerShape(FLOATING_BAR_RADIUS)
     Surface(
-        color = settingsChromeColor(),
+        color = HubCapsuleColor,
         shape = shape,
         tonalElevation = 0.dp,
         // 阴影自己画（hubDropShadow）：和设置页列表 / 聊天页胶囊同一条
@@ -127,6 +131,7 @@ internal fun FloatingBackBar(
                 resId = R.drawable.ic_arrow_back,
                 contentDescription = stringResource(R.string.action_back),
                 size = FLOATING_BAR_ICON_SIZE,
+                tint = HubInk,
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -150,7 +155,7 @@ internal fun FloatingCircleAction(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        color = settingsChromeColor(),
+        color = HubCapsuleColor,
         shape = CircleShape,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -165,6 +170,7 @@ internal fun FloatingCircleAction(
                 resId = icon,
                 contentDescription = contentDescription,
                 size = FLOATING_BAR_ICON_SIZE,
+                tint = HubInk,
             )
         }
     }

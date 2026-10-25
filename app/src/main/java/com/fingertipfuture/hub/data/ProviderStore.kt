@@ -28,10 +28,14 @@ data class HubProvider(
      */
     val enabled: Boolean = false,
     /** 接口路径（拼在 baseUrl 后面）。预设都填好了，默认 `/chat/completions`。 */
-    val apiPath: String = "",
+    val apiPath: String = DEFAULT_API_PATH,
     /** 厂商头像：`ic_brand_<logo>` 的后半截（见 `ui/provider/BrandIcons.kt`）。自定义的留空 → 用名字首字。 */
     val logo: String = "",
-)
+) {
+    companion object {
+        const val DEFAULT_API_PATH = "/chat/completions"
+    }
+}
 
 /**
  * 内置厂商：名字 / 接口地址 / 接口路径 / 真实厂商 Logo，**全部预设好**。
@@ -135,7 +139,7 @@ data class HubChatSettings(
  * 本机设置存储（SharedPreferences + JSON）。
  *
  * 2026-10-13 第二次改造（用户要求）：
- * - `enabled` 变成列表卡片上的开关，所以**内置厂商默认"禁用"**，用户开哪家就用哪家；
+ * - `enabled` 在提供商编辑页的配置分区切换，所以**内置厂商默认"禁用"**，用户开哪家就用哪家；
  * - 内置厂商**全部铺进列表**（预设好名字/地址/路径/头像），缺哪个补哪个；
  * - 删掉的字段（Response API / 回传思考 / 余额）不再读写，老 JSON 里多出来的键直接忽略。
  */
@@ -254,15 +258,15 @@ object ProviderStore {
     }
 
     /** 切换当前对话用的供应商 / 模型（入口在聊天页顶栏「更多」里）。 */
-    fun select(context: Context, providerId: String, model: String) {
-        val target = providers.firstOrNull { it.id == providerId } ?: return
+    fun select(context: Context, providerId: String, model: String): Boolean {
+        val target = providers.firstOrNull { it.id == providerId } ?: return false
         currentProviderId = target.id
         currentModel = model
-        persistSelection(context)
+        return persistSelection(context)
     }
 
     /** 新增或更新一个供应商（按 id 匹配）。 */
-    fun upsert(context: Context, provider: HubProvider) {
+    fun upsert(context: Context, provider: HubProvider): Boolean {
         val index = providers.indexOfFirst { it.id == provider.id }
         providers = if (index >= 0) {
             providers.toMutableList().also { it[index] = provider }
@@ -273,13 +277,13 @@ object ProviderStore {
         if (currentProviderId == provider.id && currentModel !in provider.models) {
             currentModel = provider.models.firstOrNull().orEmpty()
         }
-        persist(context)
+        return persist(context)
     }
 
-    /** 列表卡片上的那颗开关。 */
-    fun setEnabled(context: Context, id: String, enabled: Boolean) {
+    /** 提供商编辑页配置分区里的启用开关。 */
+    fun setEnabled(context: Context, id: String, enabled: Boolean): Boolean {
         val index = providers.indexOfFirst { it.id == id }
-        if (index < 0) return
+        if (index < 0) return false
         val updated = providers[index].copy(enabled = enabled)
         providers = providers.toMutableList().also { it[index] = updated }
         // 关掉当前这家 → 顺位换到下一家启用的（没有就空着，聊天页会提示去配）
@@ -289,10 +293,19 @@ object ProviderStore {
                 currentModel = fallback.models.firstOrNull().orEmpty()
             }
         }
-        persist(context)
+        return persist(context)
     }
 
-    fun remove(context: Context, id: String) {
+    /** 提供商列表长按拖动后的顺序；按 id 保存，缺项会自动补在末尾。 */
+    fun reorder(context: Context, orderedIds: List<String>): Boolean {
+        if (orderedIds.isEmpty()) return false
+        val byId = providers.associateBy { it.id }
+        val reordered = orderedIds.mapNotNull(byId::get)
+        providers = reordered + providers.filterNot { it.id in orderedIds }
+        return persist(context)
+    }
+
+    fun remove(context: Context, id: String): Boolean {
         val target = providers.firstOrNull { it.id == id }
         providers = providers.filterNot { it.id == id }
         // 内置厂商删了就记下来，别在下次启动又把它铺回来
@@ -306,7 +319,7 @@ object ProviderStore {
             currentProviderId = currentProvider?.id
             currentModel = currentModels.firstOrNull().orEmpty()
         }
-        persist(context)
+        return persist(context)
     }
 
     fun saveChatSettings(context: Context, value: HubChatSettings) {
@@ -386,7 +399,7 @@ object ProviderStore {
             availableModels = available,
             // 老数据没有 enabled 键：那时候能出现在列表里的都是"在用"的，沿用旧行为（true）
             enabled = if (json.has("enabled")) json.optBoolean("enabled") else true,
-            apiPath = json.optString("apiPath"),
+            apiPath = json.optString("apiPath").ifBlank { HubProvider.DEFAULT_API_PATH },
             logo = json.optString("logo"),
         )
     }
@@ -403,21 +416,19 @@ object ProviderStore {
         put("logo", value.logo)
     }
 
-    private fun persistSelection(context: Context) {
+    private fun persistSelection(context: Context): Boolean = runCatching {
         prefs(context).edit()
             .putString(KEY_CURRENT_PROVIDER, currentProviderId)
             .putString(KEY_CURRENT_MODEL, currentModel)
-            .apply()
-    }
+            .commit()
+    }.getOrDefault(false)
 
-    private fun persist(context: Context) {
+    private fun persist(context: Context): Boolean {
         if (secretLoadFailed) {
             Log.e("HubProviderStore", "有 Key 解密失败，本次不写回 provider 配置，避免空 Key 覆盖密文")
-            return
+            return false
         }
-        // Keystore 异常不能从点击事件里抛出去：保存失败只记日志，
-        // 内存里的这次修改仍然可用，下次 Keystore 恢复时再写盘。
-        runCatching {
+        return runCatching {
             prefs(context).edit()
                 .putString(
                     KEY_PROVIDERS,
@@ -427,8 +438,9 @@ object ProviderStore {
                 )
                 .putString(KEY_CURRENT_PROVIDER, currentProviderId)
                 .putString(KEY_CURRENT_MODEL, currentModel)
-                .apply()
+                .commit()
         }.onFailure { Log.e("HubProviderStore", "保存供应商配置失败", it) }
+            .getOrDefault(false)
     }
 
     private fun prefs(context: Context) =

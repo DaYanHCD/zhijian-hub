@@ -1,11 +1,6 @@
 package com.fingertipfuture.hub.update
 
-/**
- * 更新清单里的一个版本。
- *
- * `sha256` 与 `apkUrlHttps` 允许为空，是为了兼容清单里的**历史版本**条目
- * （那些 APK 已经删了，只留版本号和更新内容）。真正要下载的 [latest] 必须两者齐全。
- */
+/** 更新清单或本地更新日志中的一个版本。 */
 data class VersionInfo(
     val versionCode: Long,
     val versionName: String,
@@ -18,12 +13,18 @@ data class VersionInfo(
     val forceUpdate: Boolean = false,
 )
 
-/** 整份更新清单。 */
+/** 当前版本与它之前的全部更新记录。 */
 data class UpdateManifest(
     val latest: VersionInfo,
     val history: List<VersionInfo> = emptyList(),
     val generatedAt: String? = null,
+    val schemaVersion: Int = 0,
+    val channel: String = "",
+    val packageName: String = "",
 )
 
 /** 检查更新 / 下载失败的原因，用来决定弹窗文案。 */
-enum class UpdateError { NETWORK, SERVER, PARSE, DOWNLOAD, VERIFY, INSTALL }
+enum class UpdateError { NETWORK, SERVER, PARSE, CHANNEL, DOWNLOAD, VERIFY, INSTALL }
+
+/** 更新清单渠道与当前安装包不匹配。 */
+class UpdateChannelMismatchException(message: String) : Exception(message)

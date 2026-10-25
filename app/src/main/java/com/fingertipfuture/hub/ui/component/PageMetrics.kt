@@ -8,3 +8,6 @@ import androidx.compose.ui.unit.dp
  * 只用于**最外层**左右边距；卡片/行内部的图标与文字间距不受影响。
  */
 internal val PAGE_HORIZONTAL_MARGIN = 10.dp
+
+/** 副屏内容距左右边缘的统一间距。 */
+internal val DRAWER_HORIZONTAL_MARGIN = 10.dp

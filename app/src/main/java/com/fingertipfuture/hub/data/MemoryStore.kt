@@ -1,6 +1,7 @@
 package com.fingertipfuture.hub.data
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -68,29 +69,45 @@ internal object MemoryStore {
             text = clean,
             createdAt = System.currentTimeMillis(),
         )
+        val previous = entries
         entries = entries + entry
-        persist(context)
+        if (!persist(context)) {
+            entries = previous
+            return null
+        }
         return entry
     }
 
-    fun update(context: Context, id: String, text: String) {
+    fun update(context: Context, id: String, text: String): Boolean {
         val clean = text.trim().take(MAX_ENTRY_CHARS)
-        if (clean.isEmpty()) return
+        if (clean.isEmpty() || entries.none { it.id == id }) return false
+        val previous = entries
         entries = entries.map { if (it.id == id) it.copy(text = clean) else it }
-        persist(context)
+        if (!persist(context)) {
+            entries = previous
+            return false
+        }
+        return entries.any { it.id == id && it.text == clean }
     }
 
-    fun delete(context: Context, id: String) {
+    fun delete(context: Context, id: String): Boolean {
+        if (entries.none { it.id == id }) return false
+        val previous = entries
         entries = entries.filterNot { it.id == id }
-        persist(context)
+        if (!persist(context)) {
+            entries = previous
+            return false
+        }
+        return entries.none { it.id == id }
     }
 
     fun deleteAssistant(context: Context, assistantId: String) {
+        val previous = entries
         entries = entries.filterNot { it.ownerId == assistantId }
-        persist(context)
+        if (!persist(context)) entries = previous
     }
 
-    /** 按助手的两个开关拼出本轮相关的系统提示词；没命中时返回空串。 */
+    /** 按助手的记忆开关拼出本轮相关的系统提示词；没命中时返回空串。 */
     fun promptFor(assistant: HubAssistant, userText: String): String {
         return formatPrompt(relevantFor(assistant, userText))
     }
@@ -99,8 +116,11 @@ internal object MemoryStore {
     fun activeFor(assistant: HubAssistant): List<MemoryEntry> =
         buildList {
             if (assistant.memory) addAll(forAssistant(assistant.id))
-            if (assistant.globalMemory) addAll(global())
-        }.take(30)
+            // 全局记忆不是另一份数据：开启后把其它助手已有的记忆也加入本轮候选。
+            if (assistant.globalMemory) {
+                addAll(entries.filterNot { it.ownerId == assistant.id })
+            }
+        }.distinctBy { it.id }.take(30)
 
     /**
      * 只挑和当前问题相关的记忆。
@@ -131,6 +151,37 @@ internal object MemoryStore {
             )
             .take(6)
             .map { it.first }
+    }
+
+    /**
+     * 天气任务缺少当前位置时，从已启用的记忆中提取一个明确地点。
+     * 这是任务参数，不是把整段记忆无差别塞给模型。
+     */
+    fun locationHintForWeather(assistant: HubAssistant, userText: String): String? {
+        if (!FeatureActivation.isWeatherQuery(userText)) return null
+        return activeFor(assistant)
+            .asSequence()
+            .mapNotNull { entry -> extractLocationHint(entry.text) }
+            .firstOrNull()
+    }
+
+    /** 纯函数：只接受“位置/所在地/城市/住址/住在”等明确地点表达。 */
+    internal fun extractLocationHint(text: String): String? {
+        val normalized = text.trim()
+        if (normalized.isBlank()) return null
+        LOCATION_FACT_PATTERN.find(normalized)?.groupValues?.getOrNull(1)?.let { place ->
+            return place.trim(' ', '，', ',', '。', '；', ';', '：', ':')
+                .takeIf { it.length in 2..20 }
+        }
+        LIVE_LOCATION_PATTERN.find(normalized)?.groupValues?.getOrNull(1)?.let { place ->
+            return place.trim(' ', '，', ',', '。', '；', ';', '：', ':')
+                .takeIf { it.length in 2..20 }
+        }
+        HOME_LOCATION_PATTERN.find(normalized)?.groupValues?.getOrNull(1)?.let { place ->
+            return place.trim(' ', '，', ',', '。', '；', ';', '：', ':')
+                .takeIf { it.length in 2..20 }
+        }
+        return null
     }
 
     /** 纯函数，便于单元测试：普通问题是否和一条记忆相关。 */
@@ -178,7 +229,7 @@ internal object MemoryStore {
         return body
     }
 
-    private fun persist(context: Context) {
+    private fun persist(context: Context): Boolean {
         val array = JSONArray()
         entries.forEach { entry ->
             array.put(JSONObject().apply {
@@ -188,7 +239,14 @@ internal object MemoryStore {
                 put("createdAt", entry.createdAt)
             })
         }
-        prefs(context).edit().putString(KEY_ENTRIES, array.toString()).apply()
+        return runCatching {
+            prefs(context).edit().putString(KEY_ENTRIES, array.toString()).commit()
+        }.onFailure {
+            Log.e("HubMemory", "保存长期记忆失败", it)
+        }.getOrDefault(false)
+            .also { saved ->
+                if (!saved) Log.e("HubMemory", "长期记忆同步落盘被系统拒绝")
+            }
     }
 
     private fun prefs(context: Context) =
@@ -199,6 +257,15 @@ internal object MemoryStore {
     private val MEMORY_INTENT_TERMS = listOf(
         "记得", "记忆", "记住", "忘记", "之前", "上次", "以前",
         "我说过", "提过", "偏好", "习惯", "我是谁", "关于我", "我的资料",
+    )
+    private val LOCATION_FACT_PATTERN = Regex(
+        """(?:我的)?(?:位置|所在地|所在城市|城市|住址|定位)(?:是|在|为)?\s*([\u3400-\u9fffA-Za-z]{2,20})""",
+    )
+    private val LIVE_LOCATION_PATTERN = Regex(
+        """(?:(?:我(?:现在|目前|当前)?)?(?:住在|生活在|定居在|常住在|人在)|我(?:现在|目前|当前)?在)\s*([\u3400-\u9fffA-Za-z]{2,20})""",
+    )
+    private val HOME_LOCATION_PATTERN = Regex(
+        """我(?:家|老家|公司|工作地点)(?:在|位于)\s*([\u3400-\u9fffA-Za-z]{2,20})""",
     )
     private val STOP_TOKENS = setOf(
         "什么", "怎么", "如何", "可以", "告诉", "一下", "我的", "你的",

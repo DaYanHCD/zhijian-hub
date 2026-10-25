@@ -53,17 +53,21 @@ object SearchStore {
     private const val PREFS = "hub_search"
     private const val KEY_ITEMS = "items"
     private const val KEY_MAX = "max_results"
+    private const val KEY_BING_DEFAULTS = "bing_defaults_v1"
+
+    private val DEFAULT_BING = SearchProvider(
+        id = "sp-builtin-bing",
+        kind = SearchProvider.KIND_BING,
+        name = "Bing（免费）",
+        enabled = true,
+        inParallel = true,
+    )
 
     /** 能加的搜索服务（kind → 显示名 + 一句话说明）。 */
     val kinds: List<Triple<String, String, String>> = listOf(
         Triple(
-            SearchProvider.KIND_BING,
-            "Bing（免费）",
-            "无需 API Key，适合日常网页搜索；可能受搜索风控影响",
-        ),
-        Triple(
             SearchProvider.KIND_DEEPSEEK,
-            "DeepSeek 官方搜索",
+            "DeepSeek",
             "官方联网搜索，按成功请求计费；全面模式可读取网页正文",
         ),
         Triple(
@@ -132,19 +136,48 @@ object SearchStore {
             }.getOrNull()
         }
         val configCorrupt = rawItems != null && loaded == null
-        items = loaded.orEmpty()
+        // 旧测试版曾提供过「官方搜索」（kind=official）：现已下线，启动时自动清掉。
+        val validItems = loaded.orEmpty()
+            .filterNot { it.kind == "official" }
+            .map {
+                if (it.kind == SearchProvider.KIND_DEEPSEEK) {
+                    it.copy(name = "DeepSeek")
+                } else {
+                    it
+                }
+            }
+        val bingDefaultsApplied = prefs.getBoolean(KEY_BING_DEFAULTS, false)
+        val storedBing = validItems.firstOrNull { it.kind == SearchProvider.KIND_BING }
+        val bing = (storedBing ?: DEFAULT_BING).let {
+            if (bingDefaultsApplied) {
+                it
+            } else {
+                it.copy(enabled = true, inParallel = true)
+            }
+        }
+        items = listOf(bing) + validItems.filterNot { it.kind == SearchProvider.KIND_BING }
         maxResults = prefs.getInt(KEY_MAX, 10).coerceIn(1, 50)
         secretLoadFailed = SecretStore.lastDecryptFailed
         // 老版本 Key 是明文；启动时重写一次，自动迁成 Keystore 密文。
         // 解密失败则不回写，避免空 Key 覆盖原密文。
         if (!secretLoadFailed && !configCorrupt) {
             runCatching { persist(context) }
+            if (!bingDefaultsApplied) {
+                prefs.edit().putBoolean(KEY_BING_DEFAULTS, true).apply()
+            }
         }
     }
 
     fun byId(id: String): SearchProvider? = items.firstOrNull { it.id == id }
 
     fun add(context: Context, kind: String, name: String): SearchProvider {
+        if (kind == SearchProvider.KIND_BING) {
+            return items.firstOrNull { it.kind == SearchProvider.KIND_BING } ?: DEFAULT_BING.also {
+                items = listOf(it) + items
+                persist(context)
+                SearchContext.clearCache()
+            }
+        }
         // DeepSeek 聊天供应商已经存了同一把 Key，添加官方搜索时直接沿用，少填一次。
         val sharedKey = if (kind == SearchProvider.KIND_DEEPSEEK) {
             ProviderStore.providers
@@ -181,6 +214,7 @@ object SearchStore {
     }
 
     fun remove(context: Context, id: String) {
+        if (items.firstOrNull { it.id == id }?.kind == SearchProvider.KIND_BING) return
         items = items.filterNot { it.id == id }
         persist(context)
         SearchContext.clearCache()

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- 正式版的名字（现在不发）。测试版是「指尖Hub-Beta」，
+         在 src/debug/res 与 src/beta/res 里覆盖 —— 见 app/build.gradle.kts 的 buildTypes。 -->
+  <!-- 对话页 -->
+  <string name="chat_empty">和 AI 說點什麼吧</string>
+  <string name="chat_hint">發送訊息…</string>
+  <string name="chat_send">發送</string>
+  <string name="chat_action_fullscreen">全屏輸入</string>
+  <string name="chat_save">儲存</string>
+  <string name="chat_input_fullscreen_hint">輸入訊息與AI聊天</string>
+  <string name="chat_stop">停止生成</string>
+  <string name="more_delete_message">刪除這條訊息</string>
+  <string name="chat_stopped">（已停止）</string>
+  <string name="chat_empty_reply">（空回復）</string>
+  <string name="chat_action_more">更多</string>
+  <string name="chat_action_voice">語音（暫未上線）</string>
+  <string name="chat_action_emoji">表情</string>
+  <string name="chat_need_provider">還沒配好供應商：點左上角進側欄，「提供商」里加一個（要填介面地址、Key 和模型名）。</string>
+  <string name="chat_already_new">已經是一個新對話了</string>
+  <string name="chat_busy_hint">正在生成回答，等它說完再發這條</string>
+  <!-- 顶栏 / 抽屉 -->
+  <string name="chat_action_drawer">打開側欄</string>
+  <string name="chat_action_new_chat">新對話</string>
+  <string name="chat_title_new">新聊天</string>
+  <string name="chat_action_search">搜尋</string>
+  <string name="about_message">純安卓原生的 AI 對話客戶端：自帶 API Key、不依賴自有伺服器、不註冊帳號。</string>
+  <!-- 时间分隔 -->
+  <string name="chat_time_morning">上午</string>
+  <string name="chat_time_afternoon">下午</string>
+  <string name="chat_time_yesterday">昨天</string>
+  <string name="chat_time_month_day">%1$d月%2$d日</string>
+  <string name="chat_time_year_month_day">%1$d年%2$d月%3$d日</string>
+  <!-- 头像 -->
+  <string name="avatar_me">我</string>
+  <string name="avatar_assistant">AI</string>
+  <!-- 设置 -->
+  <string name="settings_model_unset">未設定模型</string>
+  <string name="action_cancel">取消</string>
+  <!-- 抽屉入口 -->
+  <!-- 「更多」菜单 -->
+  <!-- 提供商 -->
+  <string name="provider_add">新增提供商</string>
+  <string name="provider_edit">編輯</string>
+  <string name="provider_current">目前在用</string>
+  <string name="provider_delete">刪除</string>
+  <string name="provider_delete_confirm">確定刪除這個供應商？它的 Key 和模型列表會一起沒掉。</string>
+  <string name="provider_name">名稱</string>
+  <string name="provider_base_url">介面地址</string>
+  <string name="provider_api_key">API Key</string>
+  <!-- 当前对话的供应商与模型 -->
+  <!-- 提供商（整页） -->
+  <string name="providers_title">提供商</string>
+  <string name="provider_badge_enabled">啟用</string>
+  <string name="provider_badge_disabled">禁用</string>
+  <string name="provider_models_count">%1$d 個模型</string>
+  <string name="provider_api_path">API 路徑</string>
+  <string name="provider_api_path_hint">/chat/completions</string>
+  <string name="provider_model_empty">還沒有模型 —— 點上面的「自動檢測模型」把清單拉回來</string>
+  <string name="provider_saved">已儲存</string>
+  <!-- 关于 / 更新日志 -->
+  <string name="about_size">安裝包大小</string>
+  <string name="changelog_title">更新日志</string>
+  <string name="changelog_current">目前版</string>
+  <string name="changelog_empty">這一版沒有寫更新內容。</string>
+  <string name="changelog_version_label">版本 %1$s</string>
+  <!-- 关于 / 检查更新 -->
+  <string name="about_title">關於</string>
+  <string name="action_close">關閉</string>
+  <string name="action_stop">停止</string>
+  <string name="automation_tasks">自動化任務</string>
+  <string name="permission_notification_channel">權限提示</string>
+  <string name="permission_notification_enabled">通知權限已開啟，之後的重要提示會在這裡顯示。</string>
+  <string name="notification_listener_label">指尖Hub 通知讀取</string>
+  <string name="floating_search_title">懸浮搜題</string>
+  <string name="floating_search_notification_title">指尖Hub · 懸浮搜題</string>
+  <string name="floating_search_channel_description">保持螢幕捕獲和懸浮球運行</string>
+  <string name="unknown_size">未知大小</string>
+  <!-- 提供商（2026-10-13 用户精简之后的） -->
+  <string name="action_back">返回</string>
+  <string name="provider_untitled">未命名</string>
+  <string name="provider_save">儲存</string>
+  <string name="provider_enable_need_key">還沒填 API Key，點這張卡片進去填</string>
+  <string name="provider_detect_models">自動檢測模型</string>
+  <string name="provider_detect_busy">正在檢測可用模型…</string>
+  <string name="provider_detect_ok">檢測到 %1$d 個模型，已儲存</string>
+  <string name="provider_detect_empty">這家沒報出模型（可能不支援 /models 介面），手動加吧</string>
+  <string name="provider_detect_failed">檢測失敗：介面地址和 Key 填好再試</string>
+  <string name="provider_detect_need_url">先填介面地址</string>
+  <!-- 输入胶囊「＋」的添加栏（照微信那个） -->
+  <!-- 正文：一次完整对话里那两块（输入区 / 输出区） -->
+  <string name="message_action_copy">復制</string>
+  <string name="message_action_regenerate">重新生成</string>
+  <string name="message_action_resend">重新發送</string>
+  <string name="message_action_edit">編輯</string>
+  <string name="message_action_more">更多</string>
+  <string name="message_copied">已復制到剪貼簿</string>
+  <string name="message_thought_expand">展開思考過程</string>
+  <string name="chat_action_add">新增</string>
+  <!-- 表情栏的分类标签（图标是 Lucide 的 ic_tab_*，见 EmojiPanel.kt） -->
+  <!-- 语音输入（只做 UI） -->
+  <string name="chat_voice_hold">長按說話</string>
+  <string name="chat_voice_to_text">轉文字</string>
+  <string name="chat_voice_send">發送</string>
+  <string name="chat_voice_cancel">取消</string>
+  <string name="chat_action_keyboard">鍵盤</string>
+  <string name="emoji_category_smile">表情</string>
+  <string name="emoji_category_hand">手勢</string>
+  <string name="emoji_category_animal">動物</string>
+  <string name="emoji_category_food">食物</string>
+  <string name="emoji_category_activity">活動</string>
+  <string name="emoji_category_symbol">符號</string>
+  <string name="attach_gallery">新增圖片</string>
+  <string name="attach_camera">相機拍攝</string>
+  <string name="attach_switch_model">切換模型</string>
+  <string name="attach_thinking_depth">思考深度</string>
+  <string name="attach_search_settings">搜尋設定</string>
+  <string name="attach_plugins">插件選擇</string>
+  <string name="attach_permission_privacy">權限隱私</string>
+  <string name="attach_send_file">新增檔案</string>
+  <string name="attach_send_location">發送位置</string>
+</resources>

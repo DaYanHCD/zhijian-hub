@@ -62,6 +62,8 @@ class FeatureActivationTest {
         val plan = FeatureActivation.planSearch("今天北京天气怎么样", location = "上海")
         assertTrue(plan.shouldSearch)
         assertEquals("北京 今天天气 天气预报", plan.query)
+        assertEquals("北京", FeatureActivation.explicitWeatherPlace("今天北京天气怎么样"))
+        assertEquals("", FeatureActivation.explicitWeatherPlace("现在天气怎么样"))
     }
 
     @Test

@@ -15,7 +15,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.data.LanguageStore
+import com.fingertipfuture.hub.ui.theme.enforceHubTypography
 
 /**
  * 全 App 的统一文字入口。
@@ -24,6 +26,7 @@ import com.fingertipfuture.hub.data.LanguageStore
  * 避免改写用户内容。迁移时只需要把 `androidx.compose.material3.Text` 的 import 换成这个别名。
  */
 @Composable
+@Suppress("UNUSED_PARAMETER")
 internal fun LocalizedText(
     text: String,
     modifier: Modifier = Modifier,
@@ -44,15 +47,17 @@ internal fun LocalizedText(
     style: TextStyle = LocalTextStyle.current,
     localize: Boolean = true,
 ) {
+    val enforcedStyle = style.enforceHubTypography()
+    val shown = if (localize) LanguageStore.localize(text) else text
     Text(
-        text = if (localize) LanguageStore.localize(text) else text,
+        text = shown.withCharacterBreakOpportunities(),
         modifier = modifier,
         color = color,
         fontSize = fontSize,
         fontStyle = fontStyle,
         fontWeight = fontWeight,
-        fontFamily = fontFamily,
-        letterSpacing = letterSpacing,
+        fontFamily = FontFamily.Monospace,
+        letterSpacing = 0.sp,
         textDecoration = textDecoration,
         textAlign = textAlign,
         lineHeight = lineHeight,
@@ -61,11 +66,12 @@ internal fun LocalizedText(
         maxLines = maxLines,
         minLines = minLines,
         onTextLayout = onTextLayout ?: {},
-        style = style,
+        style = enforcedStyle,
     )
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 internal fun LocalizedText(
     text: AnnotatedString,
     modifier: Modifier = Modifier,
@@ -86,6 +92,7 @@ internal fun LocalizedText(
     style: TextStyle = LocalTextStyle.current,
     localize: Boolean = true,
 ) {
+    val enforcedStyle = style.enforceHubTypography()
     val shown = if (localize) {
         val converted = LanguageStore.localize(text.text)
         if (converted == text.text) {
@@ -105,8 +112,8 @@ internal fun LocalizedText(
         fontSize = fontSize,
         fontStyle = fontStyle,
         fontWeight = fontWeight,
-        fontFamily = fontFamily,
-        letterSpacing = letterSpacing,
+        fontFamily = FontFamily.Monospace,
+        letterSpacing = 0.sp,
         textDecoration = textDecoration,
         textAlign = textAlign,
         lineHeight = lineHeight,
@@ -115,6 +122,6 @@ internal fun LocalizedText(
         maxLines = maxLines,
         minLines = minLines,
         onTextLayout = onTextLayout ?: {},
-        style = style,
+        style = enforcedStyle,
     )
 }

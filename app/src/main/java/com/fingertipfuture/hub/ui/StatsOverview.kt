@@ -31,12 +31,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fingertipfuture.hub.R
+import com.fingertipfuture.hub.data.HubFloatingUsage
 import com.fingertipfuture.hub.data.HubMessage
 import com.fingertipfuture.hub.data.HubModelUsage
 import com.fingertipfuture.hub.data.HubTokenUsage
@@ -45,6 +44,7 @@ import com.fingertipfuture.hub.ui.component.MaterialSymbol
 import com.fingertipfuture.hub.ui.component.PAGE_HORIZONTAL_MARGIN
 import com.fingertipfuture.hub.ui.component.hubDropShadow
 import com.fingertipfuture.hub.ui.component.hubCardBorder
+import com.fingertipfuture.hub.ui.component.settingsCardColor
 import com.fingertipfuture.hub.ui.provider.TopFadeLayer
 import com.fingertipfuture.hub.ui.settings.SETTINGS_BACK_BAR_SPACE
 import com.fingertipfuture.hub.ui.settings.SettingsTitleBar
@@ -64,6 +64,7 @@ internal fun StatsScreen(onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     var messages by remember { mutableStateOf<List<HubMessage>>(emptyList()) }
     var usage by remember { mutableStateOf(HubTokenUsage()) }
+    var floatingUsage by remember { mutableStateOf(HubFloatingUsage(0, HubTokenUsage())) }
     var modelUsage by remember { mutableStateOf<List<HubModelUsage>>(emptyList()) }
     LaunchedEffect(Unit) {
         messages = runCatching {
@@ -73,6 +74,9 @@ internal fun StatsScreen(onBack: () -> Unit) {
         }.getOrDefault(emptyList())
         usage = runCatching { withContext(Dispatchers.IO) { ChatStore.usageTotals() } }
             .getOrDefault(HubTokenUsage())
+        floatingUsage = runCatching {
+            withContext(Dispatchers.IO) { ChatStore.floatingUsageTotals() }
+        }.getOrDefault(HubFloatingUsage(0, HubTokenUsage()))
         modelUsage = runCatching {
             withContext(Dispatchers.IO) { ChatStore.modelUsage().take(6) }
         }.getOrDefault(emptyList())
@@ -87,22 +91,8 @@ internal fun StatsScreen(onBack: () -> Unit) {
     }
     val inputTokens = if (usage.input > 0) usage.input else estimatedInput
     val outputTokens = if (usage.output > 0) usage.output else estimatedOutput
-    // 跟随 App 实际主题，而不是系统开关：用户可在应用内单独选深色。
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val pageColor = if (dark) {
-        MaterialTheme.colorScheme.background
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-    }
-    val cardColor = if (dark) {
-        lerp(
-            MaterialTheme.colorScheme.background,
-            MaterialTheme.colorScheme.surfaceVariant,
-            0.45f,
-        )
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    val pageColor = MaterialTheme.colorScheme.background
+    val cardColor = settingsCardColor()
 
     Box(
         modifier = Modifier
@@ -168,6 +158,8 @@ internal fun StatsScreen(onBack: () -> Unit) {
                 containerColor = cardColor,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(12.dp))
+            FloatingSearchUsageCard(usage = floatingUsage, containerColor = cardColor)
             if (modelUsage.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 ModelUsageCard(usage = modelUsage, containerColor = cardColor)
@@ -183,6 +175,85 @@ internal fun StatsScreen(onBack: () -> Unit) {
             onBack = onBack,
             modifier = Modifier.align(Alignment.TopStart),
         )
+    }
+}
+
+@Composable
+private fun FloatingSearchUsageCard(
+    usage: HubFloatingUsage,
+    containerColor: androidx.compose.ui.graphics.Color,
+) {
+    val shape = RoundedCornerShape(22.dp)
+    val total = usage.usage.input + usage.usage.output
+    Surface(
+        color = containerColor,
+        shape = shape,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier
+            .hubDropShadow(shape)
+            .hubCardBorder(shape)
+            .fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "分类统计",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                        MaterialSymbol(
+                            resId = R.drawable.ic_floating_search,
+                            contentDescription = null,
+                            size = 23.dp,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "悬浮搜题",
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = when {
+                            usage.requests == 0 -> "还没有解题记录"
+                            total > 0 ->
+                                "${usage.requests} 次 · 输入 ${tokenText(usage.usage.input)}" +
+                                    " / 输出 ${tokenText(usage.usage.output)}"
+                            else -> "${usage.requests} 次 · 服务商未返回用量"
+                        },
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = tokenText(total),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "Token",
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
